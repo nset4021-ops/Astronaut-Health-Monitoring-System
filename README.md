@@ -164,3 +164,81 @@ type SyncEnvelope = {
 5. Add the ground synchronization service, audit review, and end-to-end delay/conflict tests.
 
 Clinical limits should be supplied and approved by the responsible flight-surgery team. The application should display approved thresholds and trends, but should not invent universal "safe" ranges: acceptable values vary by crew member, mission phase, equipment, medication, and measurement protocol.
+
+## React holographic console
+
+The runnable hackathon frontend is a Vite + React application with React Three Fiber and Three.js:
+
+```text
+src/
+	App.jsx                  App shell, local state, and interactions
+	components/
+		HologramScene.jsx      Shader-driven core, rings, particles, pointer tilt
+		HologramUI.jsx         Glass HUD panels and telemetry controls
+	data/metrics.js          Demo telemetry, metric catalog, and assessments
+	hooks/useHologramGlitch.js
+	lib/healthStore.js       LocalStorage persistence and offline outbox model
+	styles.css               CRT scanlines, glass panels, responsive layout
+```
+
+Run the frontend locally:
+
+```powershell
+npm install
+npm run dev
+```
+
+The demo includes four health domains, baseline/range labels, actionable attention items, acknowledgement events, a local check-in workflow, and an outbox counter. The visual telemetry is synthetic for the hackathon. Replace `src/data/metrics.js` with signed mission configuration and replace `src/lib/healthStore.js` with encrypted IndexedDB or SQLite-backed storage before operational use.
+
+### Interaction map
+
+- Select `CARDIO`, `BONE`, `IMMUNE`, or `PSYCH` to change the focused readout.
+- Acknowledge an item in the attention queue to append a local audit event and increment the sync outbox.
+- Save a private check-in to model offline crew input.
+- Use the settings/refresh controls to trigger the temporary RGB-style hologram glitch state.
+
+This is a decision-support prototype, not a diagnostic device. All clinical boundaries and countermeasures require review by the responsible flight-surgery team.
+
+## Immersive 3D architecture
+
+The current frontend uses one full-screen React Three Fiber scene as the product surface. DOM is limited to accessible controls, the camera permission dialog, and small status affordances; the dashboard visualization itself is rendered in WebGL.
+
+```text
+React state + localStorage outbox
+		  |
+	  App / ImmersiveHud
+		  |
+	 R3F Canvas + OrbitControls
+	 /          |             \
+  HoloCore   draggable nodes   MobilityStation
+  shader     metric objects          |
+	 \          |          WebRTC camera
+	  scene graph             |
+				 MediaPipe PoseLandmarker
+					    |
+		     local joint angles / posture assessment
+```
+
+- `HologramScene.jsx` owns the interactive 3D scene, additive shader core, particle field, metric nodes, pointer tilt, scene orbit, and per-node drag state.
+- `ImmersiveHud.jsx` owns minimal accessible HUD controls and the camera station. It does not calculate clinical thresholds.
+- `usePoseTracker.js` requests a local camera stream, runs MediaPipe PoseLandmarker in `VIDEO` mode, and derives knee/hip angles and a confidence score in the browser.
+- `healthStore.js` evaluates typed metric boundaries, emits `watch` or `urgent` assessments with countermeasures, persists severity-specific acknowledgements and check-in events locally, and increments the delayed-downlink outbox.
+- The highest-priority assessment is rendered as an in-scene alert beacon. Clicking it acknowledges that exact assessment and advances the beacon to the next one without leaving the 3D environment.
+
+### Mobility tracking flow
+
+1. The astronaut opens `MOBILITY` and explicitly arms the camera.
+2. `getUserMedia` provides video only; audio is never requested.
+3. MediaPipe detects one pose locally. No frames are uploaded by this prototype.
+4. Landmark geometry derives joint angles using the angle between adjacent limb vectors.
+5. The UI displays confidence, posture, knee angles, and hip angles. A snapshot can be recorded to the local event path.
+6. Production deployment should bundle/cache the WASM runtime and model, sign the model/configuration, encrypt snapshots, and require flight-surgery review for exercise thresholds.
+
+### React runbook
+
+```powershell
+npm install
+npm run dev
+```
+
+Use mouse drag on a metric node, drag the empty scene to orbit the dashboard, scroll to zoom, click the holographic core to focus it, and open `MOBILITY` to test the camera station. Browser camera permission requires `localhost` or HTTPS. The initial MediaPipe model URL is remote for the demo; an offline mission build must package it locally.

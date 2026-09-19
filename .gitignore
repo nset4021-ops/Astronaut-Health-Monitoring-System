@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+data/*.db
+data/*.db-shm
+data/*.db-wal
+.streamlit/secrets.toml
+node_modules/
+dist/
+node_modules
