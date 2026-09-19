@@ -3,6 +3,7 @@ import { Float, OrbitControls, Sparkles, Text } from '@react-three/drei'
 import { useRef, useState } from 'react'
 import * as THREE from 'three'
 import { metricDefinitions } from '../data/metrics'
+import MissionHealthCore from './MissionHealthCore'
 
 const vertexShader = `
   varying vec3 vNormal;
@@ -145,7 +146,7 @@ function AlertBeacon({ alert, onAcknowledge }) {
   </group>
 }
 
-function SceneContent({ selectedMetric, onSelectMetric, nodePositions, onPositionChange, onOpenMobility, activeAlert, onAcknowledge }) {
+function SceneContent({ selectedMetric, onSelectMetric, nodePositions, onPositionChange, onOpenMobility, activeAlert, onAcknowledge, healthScore, queueLength, alertCount }) {
   const dashboard = useRef()
   const { pointer } = useThree()
   useFrame((_, delta) => {
@@ -160,7 +161,7 @@ function SceneContent({ selectedMetric, onSelectMetric, nodePositions, onPositio
       <Sparkles count={140} scale={[12, 8, 8]} size={1.1} speed={0.18} color="#82fff2" opacity={0.5} />
       <Sparkles count={45} scale={[7, 5, 5]} size={2.2} speed={0.08} color="#669eff" opacity={0.24} />
       <group ref={dashboard}>
-        <HoloCore onSelect={onSelectMetric} />
+        <MissionHealthCore healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} onSelect={onSelectMetric} />
         <Text position={[-3.4, 2.55, 0]} fontSize={0.14} color="#7eaaa9" anchorX="left">ORBITAL HEALTH // HOLOGRAPHIC CONSOLE</Text>
         <Text position={[-3.4, 2.28, 0]} fontSize={0.3} color="#e8fbf8" anchorX="left">MISSION READINESS</Text>
         <Text position={[-0.48, 2.28, 0]} fontSize={0.3} color="#6fffe9" anchorX="left">88%</Text>
@@ -173,12 +174,12 @@ function SceneContent({ selectedMetric, onSelectMetric, nodePositions, onPositio
   )
 }
 
-export function HologramScene({ selectedMetric, onSelectMetric, onOpenMobility, activeAlert, onAcknowledge }) {
+export function HologramScene({ selectedMetric, onSelectMetric, onOpenMobility, activeAlert, onAcknowledge, healthScore, queueLength, alertCount }) {
   const [nodePositions, setNodePositions] = useState({ cardio: [-3.0, 1.25, 0], bone: [2.8, 1.15, 0], immune: [-2.8, -1.05, 0], behavior: [2.55, -1.0, 0] })
   return (
     <div className="immersive-canvas" aria-label="Interactive 3D astronaut health dashboard">
       <Canvas camera={{ position: [0, 0, 7.4], fov: 42 }} dpr={[1, 1.8]} gl={{ alpha: true, antialias: true }}>
-        <SceneContent selectedMetric={selectedMetric} onSelectMetric={onSelectMetric} nodePositions={nodePositions} onPositionChange={(id, position) => setNodePositions((current) => ({ ...current, [id]: position }))} onOpenMobility={onOpenMobility} activeAlert={activeAlert} onAcknowledge={onAcknowledge} />
+        <SceneContent selectedMetric={selectedMetric} onSelectMetric={onSelectMetric} nodePositions={nodePositions} onPositionChange={(id, position) => setNodePositions((current) => ({ ...current, [id]: position }))} onOpenMobility={onOpenMobility} activeAlert={activeAlert} onAcknowledge={onAcknowledge} healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} />
       </Canvas>
     </div>
   )

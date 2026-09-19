@@ -242,3 +242,36 @@ npm run dev
 ```
 
 Use mouse drag on a metric node, drag the empty scene to orbit the dashboard, scroll to zoom, click the holographic core to focus it, and open `MOBILITY` to test the camera station. Browser camera permission requires `localhost` or HTTPS. The initial MediaPipe model URL is remote for the demo; an offline mission build must package it locally.
+
+## Mission score and offline storage APIs
+
+`MissionHealthCore.jsx` is the central R3F score object. Pass it the derived score and queue state:
+
+```jsx
+<MissionHealthCore
+	healthScore={offlineHealth.healthScore}
+	queueLength={offlineHealth.queueLength}
+	alertCount={offlineHealth.alertCount}
+	onSelect={selectModule}
+/>
+```
+
+The score uses the current local domain records and changes its palette and animation behavior: cyan/green at 85+, amber from 65 to 84, and red below 65. Its Drei `<Html>` label remains attached to the mesh while the scene is orbited.
+
+`useOfflineHealthStorage.js` stores append-only records in localStorage and queues each record for delayed sync:
+
+```jsx
+const {
+	healthScore,
+	queueLength,
+	addHealthLog,
+	addMobilityResult,
+	addRadiationExposure,
+	setConnectionActive,
+} = useOfflineHealthStorage()
+
+addRadiationExposure({ domain: 'radiation', doseMillisieverts: 0.42, score: 90 })
+setConnectionActive(true) // drains the queue on the simulated sync interval
+```
+
+Every record carries an ID, UTC observation time, source, and schema version. The demo drains queued records when `connectionActive` is true; production flight software should replace the simulated drain with an idempotent signed downlink protocol and encrypted IndexedDB/SQLite storage.
