@@ -1,101 +1,63 @@
-import { Html, Text } from '@react-three/drei'
-import { useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
-import * as THREE from 'three'
+import { Html } from '@react-three/drei'
 import MissionHealthCore from './MissionHealthCore'
 
-const tabs = [
-  { id: 'mobility', label: 'MOBILITY & CAMERA', short: 'MOBILITY' },
-  { id: 'biometrics', label: 'BIOMETRICS & RADIATION', short: 'BIOMETRICS' },
-  { id: 'briefing', label: 'DAILY BRIEFING', short: 'BRIEFING' },
+const metrics = [
+  { label: 'CARDIOVASCULAR', value: '78', unit: 'BPM', percent: 78, tone: 'cyan', detail: 'Resting heart rate · +4.8% baseline' },
+  { label: 'RADIATION EXPOSURE', value: '0.42', unit: 'mSv', percent: 28, tone: 'green', detail: 'Dosimeter dose · 24h window' },
+  { label: 'BONE DENSITY', value: '96', unit: '% BASELINE', percent: 96, tone: 'yellow', detail: 'Loading response · trend stable' },
+  { label: 'IMMUNE READINESS', value: '92', unit: 'INDEX', percent: 92, tone: 'green', detail: 'Symptoms clear · recovery stable' },
 ]
 
-const panelData = {
-  mobility: {
-    title: 'MOBILITY / CAMERA',
-    subtitle: 'SYSTEM CALIBRATION',
-    rows: [['Pose confidence', 'READY', 'green'], ['Knee flexion', '92° / 88°', 'green'], ['Posture', 'NEUTRAL', 'green']],
-  },
-  biometrics: {
-    title: 'BIOMETRICS / RAD',
-    subtitle: 'MULTI-MODAL TELEMETRY',
-    rows: [['Resting heart rate', '78 BPM', 'yellow'], ['Radiation dose', '0.42 mSv', 'green'], ['Sleep recovery', '5.8 HRS', 'yellow']],
-  },
-  briefing: {
-    title: 'DAILY BRIEFING',
-    subtitle: 'MISSION DAY 184',
-    rows: [['Crew check-in', 'DUE NOW', 'yellow'], ['Ground handshake', '02:14 UTC', 'green'], ['Open assessments', '02', 'red']],
-  },
+const tabs = [
+  { id: 'mobility', label: 'MOBILITY & CAMERA', action: 'mobility' },
+  { id: 'biometrics', label: 'BIOMETRICS & RADIATION' },
+  { id: 'briefing', label: 'DAILY BRIEFING', action: 'briefing' },
+]
+
+function StatusDot({ tone }) {
+  return <span className={`command-status-dot ${tone}`} aria-hidden="true" />
 }
 
-function PanelSurface({ title, subtitle, rows, position, rotation = [0, 0, 0], active, onClick }) {
-  return <group position={position} rotation={rotation} onClick={(event) => { event.stopPropagation(); onClick?.() }}>
-    <mesh>
-      <planeGeometry args={[3.25, 2.2]} />
-      <meshBasicMaterial color={active ? '#0c4350' : '#082630'} transparent opacity={0.8} side={THREE.DoubleSide} />
-    </mesh>
-    <lineSegments>
-      <edgesGeometry args={[new THREE.PlaneGeometry(3.25, 2.2)]} />
-      <lineBasicMaterial color={active ? '#6fffe9' : '#2f7880'} transparent opacity={active ? 0.9 : 0.48} />
-    </lineSegments>
-    <mesh position={[-1.48, 0.93, 0.025]}>
-      <planeGeometry args={[0.04, 0.38]} />
-      <meshBasicMaterial color={active ? '#6fffe9' : '#2f7880'} />
-    </mesh>
-    <Text position={[-1.28, 0.83, 0.04]} fontSize={0.14} color={active ? '#6fffe9' : '#9ac9c4'} anchorX="left">{title}</Text>
-    <Text position={[-1.28, 0.62, 0.04]} fontSize={0.075} color="#5d8c90" anchorX="left">{subtitle}</Text>
-    {rows.map(([label, value, tone], index) => <group key={label} position={[-1.28, 0.23 - index * 0.47, 0.04]}>
-      <Text position={[0, 0.1, 0]} fontSize={0.085} color="#8fb8b7" anchorX="left">{label}</Text>
-      <Text position={[1.22, 0.1, 0]} fontSize={0.105} color={tone === 'green' ? '#a9ffb5' : tone === 'yellow' ? '#ffce6a' : '#ff8d7c'} anchorX="right">{value}</Text>
-      <mesh position={[0.02, -0.1, 0]}>
-        <planeGeometry args={[2.48, 0.012]} />
-        <meshBasicMaterial color={tone === 'green' ? '#a9ffb5' : tone === 'yellow' ? '#ffce6a' : '#ff8d7c'} transparent opacity={0.5} />
-      </mesh>
-    </group>)}
-    <Html center position={[0, -1.13, 0]} style={{ pointerEvents: 'none' }}>
-      <div className="cockpit-panel-caption">CLICK TO FOCUS</div>
-    </Html>
-  </group>
+function PanelHeader({ eyebrow, title, status }) {
+  return <div className="command-panel-header"><div><span className="command-eyebrow">{eyebrow}</span><h2>{title}</h2></div>{status && <span className="command-status-label"><StatusDot tone={status.tone} />{status.label}</span>}</div>
 }
 
-function FixedHud({ healthScore, alertCount, queueLength }) {
+function MetricGrid() {
+  return <div className="metric-grid">{metrics.map((metric) => <article className="metric-card" key={metric.label}><div className="metric-card-top"><StatusDot tone={metric.tone} /><span>{metric.label}</span><strong>{metric.value}<small>{metric.unit}</small></strong></div><div className="metric-bar"><div className={metric.tone} style={{ width: `${metric.percent}%` }} /></div><p>{metric.detail}</p></article>)}</div>
+}
+
+function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, voice, onOpenMobility, onOpenBriefing, onApplyCountermeasure }) {
   return <Html fullscreen transform={false} style={{ pointerEvents: 'none' }}>
-    <div className="fixed-cockpit-hud">
-      <div><span>MISSION HEALTH</span><strong>{healthScore}%</strong></div>
-      <div><span>OPEN ALERTS</span><strong className={alertCount ? 'hud-warn' : ''}>{alertCount}</strong></div>
-      <div><span>LOCAL OUTBOX</span><strong>{queueLength}</strong></div>
+    <div className="command-center-shell">
+      <header className="command-topbar command-panel">
+        <div className="command-brand"><span className="command-brand-mark">◈</span><div><span className="command-eyebrow">AURORA MEDICAL // HAB-01</span><strong>ORBITAL <i>HEALTH</i></strong></div></div>
+        <div className="command-mission"><span>MISSION DAY 184</span><b>06:42:18 UTC</b><em><StatusDot tone="green" /> SYSTEM ONLINE</em></div>
+        <div className="command-score"><span>UNIFIED HEALTH</span><strong>{healthScore}%</strong></div>
+        <button className={`command-voice ${voice?.isListening ? 'is-listening' : ''}`} style={{ pointerEvents: 'auto' }} onClick={voice?.isListening ? voice.stopListening : voice?.startListening} aria-label="Toggle voice commands"><span>{voice?.isListening ? '●' : '◉'}</span>{voice?.isListening ? 'LISTENING' : 'VOICE COMMANDS'}</button>
+      </header>
+
+      <aside className="command-left command-panel">
+        <PanelHeader eyebrow="01 / LIVE SENSOR" title="Mobility check" status={{ tone: 'green', label: 'READY' }} />
+        <button className="webcam-preview" style={{ pointerEvents: 'auto' }} onClick={onOpenMobility}><div className="webcam-grid-lines" /><span className="webcam-icon">◉</span><strong>CAMERA STATION</strong><small>CLICK TO INITIALIZE LOCAL POSE TRACKING</small></button>
+        <div className="posture-readout"><span>AI POSTURE STATUS</span><strong className="tone-green">NEUTRAL / READY</strong><div><span>POSE CONFIDENCE</span><b>--</b></div><div><span>JOINT RANGE</span><b>AWAITING FEED</b></div></div>
+        <button className="command-secondary" style={{ pointerEvents: 'auto' }} onClick={onOpenMobility}>OPEN MOBILITY MODULE <span>→</span></button>
+      </aside>
+
+      <section className="command-center command-panel"><PanelHeader eyebrow="02 / UNIFIED TELEMETRY" title="Core health metrics" status={{ tone: healthScore >= 85 ? 'green' : healthScore >= 65 ? 'yellow' : 'red', label: healthScore >= 85 ? 'OPTIMAL' : 'REVIEW' }} /><MetricGrid /><div className="core-score-strip"><div><span>MISSION HEALTH CORE</span><strong>{healthScore}%</strong></div><div><span>LOCAL OUTBOX</span><strong>{queueLength}</strong></div><div><span>OPEN ASSESSMENTS</span><strong className={alertCount ? 'tone-yellow' : 'tone-green'}>{alertCount}</strong></div></div></section>
+
+      <aside className="command-right command-panel">
+        <PanelHeader eyebrow="03 / DECISION SUPPORT" title="Action queue" status={activeAlert ? { tone: activeAlert.status === 'urgent' ? 'red' : 'yellow', label: `${alertCount} OPEN` } : { tone: 'green', label: 'CLEAR' }} />
+        {activeAlert ? <div className="command-alert"><div className="command-alert-title"><StatusDot tone={activeAlert.status === 'urgent' ? 'red' : 'yellow'} /><strong>{activeAlert.title}</strong></div><p>{activeAlert.body}</p><button className="countermeasure-cta" style={{ pointerEvents: 'auto' }} onClick={onApplyCountermeasure}>APPLY COUNTERMEASURE <span>→</span></button></div> : <div className="command-clear"><StatusDot tone="green" /> No active countermeasures.</div>}
+        <button className="briefing-cta" style={{ pointerEvents: 'auto' }} onClick={onOpenBriefing}><span><b>DAILY BRIEFING</b><small>60 SEC · SLEEP / MOBILITY / RADIATION</small></span><strong>→</strong></button>
+        <div className="command-alert-note"><span>VOICE READY</span><small>{voice?.transcript || 'Say “run daily briefing”'}</small></div>
+      </aside>
+
+      <nav className="command-tabs" aria-label="Dashboard modules">{tabs.map((tab) => <button key={tab.id} style={{ pointerEvents: 'auto' }} onClick={() => tab.action === 'mobility' ? onOpenMobility?.() : tab.action === 'briefing' ? onOpenBriefing?.() : null}><span>{tab.label}</span><small>{tab.id === 'mobility' ? 'CAMERA + AI POSTURE' : tab.id === 'biometrics' ? 'CARDIO + RAD + SYSTEMS' : 'CREW CHECK-IN'}</small></button>)}</nav>
+      <div className="command-footnote">OFFLINE-FIRST · ENCRYPTED LOCAL STORE · CLINICAL DECISION SUPPORT, NOT A DIAGNOSIS</div>
     </div>
   </Html>
 }
 
-function QuickTabs({ activeTab, onTabChange }) {
-  return <Html fullscreen transform={false} style={{ pointerEvents: 'none' }}>
-    <nav className="cockpit-tabs" aria-label="Mission modules">
-      {tabs.map((tab) => <button key={tab.id} className={activeTab === tab.id ? 'is-active' : ''} onClick={() => onTabChange?.(tab.id)}>{tab.short}<small>{tab.label}</small></button>)}
-    </nav>
-  </Html>
+export default function DashboardLayout({ healthScore, alertCount, queueLength, activeAlert, voice, onSelectMetric, onOpenMobility, onOpenBriefing, onApplyCountermeasure }) {
+  return <group><MissionHealthCore healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} onSelect={onSelectMetric} /><CommandCenterGrid healthScore={healthScore} alertCount={alertCount} queueLength={queueLength} activeAlert={activeAlert} voice={voice} onOpenMobility={onOpenMobility} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} /></group>
 }
-
-export default function DashboardLayout({ healthScore, alertCount, queueLength, activeTab = 'biometrics', onTabChange, onSelectMetric, onOpenMobility, onOpenBriefing, hudLocked = true }) {
-  const cockpit = useRef()
-  useFrame((state) => {
-    if (!cockpit.current) return
-    cockpit.current.rotation.x = THREE.MathUtils.lerp(cockpit.current.rotation.x, state.pointer.y * -0.035, 0.035)
-  })
-  const focused = panelData[activeTab] || panelData.biometrics
-
-  return <group ref={cockpit}>
-    <MissionHealthCore healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} onSelect={onSelectMetric} />
-    <PanelSurface {...panelData.mobility} position={[-3.7, 0.45, -0.25]} rotation={[0, 0.24, 0]} active={activeTab === 'mobility'} onClick={() => { onTabChange?.('mobility'); onOpenMobility?.() }} />
-    <PanelSurface {...panelData.biometrics} position={[3.7, 0.45, -0.25]} rotation={[0, -0.24, 0]} active={activeTab === 'biometrics'} onClick={() => onTabChange?.('biometrics')} />
-    <PanelSurface {...panelData.briefing} position={[0, -2.72, -0.1]} active={activeTab === 'briefing'} onClick={() => { onTabChange?.('briefing'); onOpenBriefing?.() }} />
-    <Text position={[-3.7, 1.72, -0.26]} rotation={[0, 0.24, 0]} fontSize={0.09} color="#557f84" anchorX="left">PORT // 01</Text>
-    <Text position={[2.25, 1.72, -0.26]} rotation={[0, -0.24, 0]} fontSize={0.09} color="#557f84" anchorX="left">PORT // 02</Text>
-    <Text position={[-1.65, -1.52, -0.1]} fontSize={0.09} color="#557f84" anchorX="left">PORT // 03</Text>
-    <Text position={[-1.65, 2.58, 0]} fontSize={0.1} color="#6fffe9" anchorX="left">COCKPIT CONFIGURATION // {focused.title}</Text>
-    {hudLocked && <FixedHud healthScore={healthScore} alertCount={alertCount} queueLength={queueLength} />}
-    <QuickTabs activeTab={activeTab} onTabChange={onTabChange} />
-  </group>
-}
-
-export { tabs }
