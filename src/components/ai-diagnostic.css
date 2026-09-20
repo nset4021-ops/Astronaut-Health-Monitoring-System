@@ -1,5 +1,5 @@
 .ai-diagnostic { max-width: 980px; }
-.ai-feed-wrap { aspect-ratio: 16 / 9; background: #02080d; border: 1px solid rgba(111,255,233,.25); overflow: hidden; position: relative; }
+.ai-feed-wrap { --alignment-color: #ff665f; aspect-ratio: 16 / 9; background: #02080d; border: 2px solid var(--alignment-color); box-shadow: 0 0 18px color-mix(in srgb, var(--alignment-color) 35%, transparent), inset 0 0 24px color-mix(in srgb, var(--alignment-color) 12%, transparent); overflow: hidden; position: relative; transition: border-color .2s ease, box-shadow .2s ease; }
 .ai-feed-wrap video, .ai-feed-wrap canvas { height: 100%; object-fit: cover; position: absolute; transform: scaleX(-1); width: 100%; }
 .ai-feed-wrap canvas { pointer-events: none; }
 .ai-diagnostic-grid { display: grid; gap: 14px; grid-template-columns: 1.2fr 1.8fr; margin-top: 15px; }

@@ -75,7 +75,31 @@ function analyzePose(keypoints) {
   }
 }
 
-function drawOverlay(canvas, video, analysis) {
+const ALIGNMENT_POINTS = ['nose', 'left_shoulder', 'right_shoulder', 'left_hip', 'right_hip', 'left_ankle', 'right_ankle']
+
+function analyzeAlignment(keypoints, videoWidth, videoHeight) {
+  const points = ALIGNMENT_POINTS.map((name) => findKeypoint(keypoints, name)).filter((point) => point && (point.score || 0) >= 0.35)
+  if (points.length < 5 || !videoWidth || !videoHeight) return { state: 'out-of-frame', label: 'Move Center', detail: 'Keep your full body visible' }
+
+  const bounds = points.reduce((box, point) => ({
+    minX: Math.min(box.minX, point.x / videoWidth),
+    maxX: Math.max(box.maxX, point.x / videoWidth),
+    minY: Math.min(box.minY, point.y / videoHeight),
+    maxY: Math.max(box.maxY, point.y / videoHeight),
+  }), { minX: 1, maxX: 0, minY: 1, maxY: 0 })
+  const width = bounds.maxX - bounds.minX
+  const height = bounds.maxY - bounds.minY
+  const centerX = (bounds.minX + bounds.maxX) / 2
+
+  if (bounds.minX < 0.05 || bounds.maxX > 0.95 || bounds.minY < 0.05 || bounds.maxY > 0.98 || Math.abs(centerX - 0.5) > 0.14) {
+    return { state: 'out-of-frame', label: 'Move Center', detail: 'Center your body in the target' }
+  }
+  if (height < 0.62 || width < 0.24) return { state: 'too-far', label: 'Step Closer', detail: 'Move closer until you fill the target' }
+  if (height > 0.9 || width > 0.72) return { state: 'too-close', label: 'Step Back', detail: 'Create space from the camera' }
+  return { state: 'ready', label: 'Perfect - Stand Still', detail: 'Hold position to begin calibration' }
+}
+
+function drawOverlay(canvas, video, analysis, alignment, countdown) {
   const context = canvas.getContext('2d')
   const scaleX = canvas.width / video.videoWidth
   const scaleY = canvas.height / video.videoHeight
@@ -84,6 +108,28 @@ function drawOverlay(canvas, video, analysis) {
   context.scale(scaleX, scaleY)
   context.translate(video.videoWidth, 0)
   context.scale(-1, 1)
+  const target = { left: video.videoWidth * 0.28, right: video.videoWidth * 0.72, top: video.videoHeight * 0.07, bottom: video.videoHeight * 0.97 }
+  const alignmentColor = alignment?.state === 'ready' ? '#8dff9b' : '#ff665f'
+  context.strokeStyle = alignmentColor
+  context.shadowColor = alignmentColor
+  context.shadowBlur = 18
+  context.lineWidth = 3 / scaleX
+  context.strokeRect(target.left, target.top, target.right - target.left, target.bottom - target.top)
+  context.shadowBlur = 0
+  context.font = `600 ${Math.max(16, video.videoWidth * 0.022)}px 'DM Mono', monospace`
+  context.textAlign = 'center'
+  context.fillStyle = alignmentColor
+  context.fillText(alignment?.label || 'Move Center', video.videoWidth / 2, video.videoHeight * 0.14)
+  context.font = `400 ${Math.max(11, video.videoWidth * 0.012)}px 'DM Mono', monospace`
+  context.fillText(alignment?.detail || 'Keep your full body visible', video.videoWidth / 2, video.videoHeight * 0.18)
+  if (countdown) {
+    context.fillStyle = '#e8fbf8'
+    context.shadowColor = alignmentColor
+    context.shadowBlur = 24
+    context.font = `600 ${Math.max(48, video.videoWidth * 0.1)}px 'DM Mono', monospace`
+    context.fillText(countdown, video.videoWidth / 2, video.videoHeight * 0.58)
+    context.shadowBlur = 0
+  }
   context.lineWidth = 4 / scaleX
   context.strokeStyle = analysis.status === 'MOBILITY OPTIMAL' ? '#6fffe9' : '#ffce6a'
   context.fillStyle = '#e8fbf8'
@@ -122,14 +168,25 @@ export default function AITrackingDiagnostic({ onClose, onSnapshotSaved }) {
   const detectorRef = useRef(null)
   const animationRef = useRef(null)
   const lastInferenceRef = useRef(0)
+  const alignmentStartRef = useRef(null)
+  const countdownIntervalRef = useRef(null)
+  const countdownStartedRef = useRef(false)
+  const countdownValueRef = useRef(null)
   const [status, setStatus] = useState('idle')
   const [cameraError, setCameraError] = useState('')
   const [hasPermission, setHasPermission] = useState(false)
   const [analysis, setAnalysis] = useState(null)
+  const [alignment, setAlignment] = useState({ state: 'out-of-frame', label: 'Move Center', detail: 'Keep your full body visible' })
+  const [countdown, setCountdown] = useState(null)
 
   const stopTracking = useCallback(() => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
     animationRef.current = null
+    countdownIntervalRef.current = null
+    alignmentStartRef.current = null
+    countdownStartedRef.current = false
+    countdownValueRef.current = null
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
     detectorRef.current?.dispose?.()
@@ -137,6 +194,8 @@ export default function AITrackingDiagnostic({ onClose, onSnapshotSaved }) {
     if (videoRef.current) videoRef.current.srcObject = null
     setHasPermission(false)
     setAnalysis(null)
+    setAlignment({ state: 'out-of-frame', label: 'Move Center', detail: 'Keep your full body visible' })
+    setCountdown(null)
     setStatus('idle')
   }, [])
 
@@ -149,8 +208,39 @@ export default function AITrackingDiagnostic({ onClose, onSnapshotSaved }) {
       const poses = await detector.estimatePoses(video, { flipHorizontal: true })
       const nextAnalysis = poses[0]?.keypoints?.length ? analyzePose(poses[0].keypoints) : null
       if (nextAnalysis) {
+        const nextAlignment = analyzeAlignment(nextAnalysis.keypoints, video.videoWidth, video.videoHeight)
+        setAlignment(nextAlignment)
+        video.parentElement?.style.setProperty('--alignment-color', nextAlignment.state === 'ready' ? '#8dff9b' : '#ff665f')
+        if (nextAlignment.state === 'ready' && !countdownStartedRef.current) {
+          alignmentStartRef.current ||= timestamp
+          if (timestamp - alignmentStartRef.current >= 2000) {
+            countdownStartedRef.current = true
+            setStatus('countdown')
+            setCountdown(3)
+            countdownValueRef.current = 3
+            countdownIntervalRef.current = setInterval(() => {
+              setCountdown((current) => {
+                if (current === 1) {
+                  clearInterval(countdownIntervalRef.current)
+                  countdownIntervalRef.current = null
+                  countdownValueRef.current = null
+                  setStatus('recording')
+                  return null
+                }
+                countdownValueRef.current = current - 1
+                return current - 1
+              })
+            }, 1000)
+          }
+        } else if (nextAlignment.state !== 'ready') {
+          alignmentStartRef.current = null
+        }
         setAnalysis(nextAnalysis)
-        if (canvasRef.current) drawOverlay(canvasRef.current, video, nextAnalysis)
+        if (canvasRef.current) drawOverlay(canvasRef.current, video, nextAnalysis, nextAlignment, countdownValueRef.current)
+      } else {
+        alignmentStartRef.current = null
+        setAlignment({ state: 'out-of-frame', label: 'Move Center', detail: 'Keep your full body visible' })
+        video.parentElement?.style.setProperty('--alignment-color', '#ff665f')
       }
     }
     animationRef.current = requestAnimationFrame(trackFrame)
@@ -175,6 +265,7 @@ export default function AITrackingDiagnostic({ onClose, onSnapshotSaved }) {
       videoRef.current.srcObject = stream
       await videoRef.current.play()
       setHasPermission(true)
+      setAlignment({ state: 'out-of-frame', label: 'Move Center', detail: 'Keep your full body visible' })
       setStatus('loading-model')
       await tf.setBackend('webgl')
       await tf.ready()
@@ -203,7 +294,7 @@ export default function AITrackingDiagnostic({ onClose, onSnapshotSaved }) {
     canvasRef.current.height = video.videoHeight
   }
 
-  const statusLabel = { idle: 'CAMERA STANDBY', requesting: 'PERMISSION REQUESTED', 'loading-model': 'LOADING MOVENET', tracking: analysis?.status || 'TRACKING', 'snapshot-saved': 'SNAPSHOT SAVED LOCALLY', error: 'CAMERA ERROR' }[status]
+  const statusLabel = { idle: 'CAMERA STANDBY', requesting: 'PERMISSION REQUESTED', 'loading-model': 'LOADING MOVENET', tracking: analysis?.status || 'TRACKING', countdown: 'CALIBRATION COUNTDOWN', recording: 'DIAGNOSTIC RECORDING', 'snapshot-saved': 'SNAPSHOT SAVED LOCALLY', error: 'CAMERA ERROR' }[status]
   const statusColor = analysis?.status === 'MOBILITY OPTIMAL' ? '#6fffe9' : '#ffce6a'
 
   return <div className="camera-layer"><section className="camera-console ai-diagnostic" role="dialog" aria-label="AI mobility diagnostic"><div className="camera-title"><div><span className="eyebrow">SYSTEM CALIBRATION / AI MOBILITY CHECK</span><h2>MoveNet diagnostic feed</h2></div><button className="close-button" onClick={() => { stopTracking(); onClose?.() }} aria-label="Close AI mobility diagnostic">×</button></div><div className="ai-feed-wrap"><video ref={videoRef} muted playsInline onLoadedMetadata={resizeCanvas} /><canvas ref={canvasRef} aria-label="Pose skeleton overlay" />{!hasPermission && <div className="camera-placeholder"><span className="text-2xl">◉</span><span>Camera feed standby</span></div>}<span className="camera-feed-label">{statusLabel}</span></div><div className="ai-diagnostic-grid"><div className="ai-status-readout" style={{ '--diagnostic-color': statusColor }}><span className="eyebrow">DIAGNOSTIC STATUS</span><strong>{statusLabel}</strong><small>{analysis ? `${analysis.confidence}% landmark confidence` : 'No pose frame available'}</small></div><div className="angle-grid"><div className="readout"><span>L KNEE FLEXION</span><strong>{analysis?.leftKneeFlexion ? `${analysis.leftKneeFlexion}°` : '--'}</strong></div><div className="readout"><span>R KNEE FLEXION</span><strong>{analysis?.rightKneeFlexion ? `${analysis.rightKneeFlexion}°` : '--'}</strong></div><div className="readout"><span>L SHOULDER ROM</span><strong>{analysis?.leftShoulderRange ? `${analysis.leftShoulderRange}°` : '--'}</strong></div><div className="readout"><span>R SHOULDER ROM</span><strong>{analysis?.rightShoulderRange ? `${analysis.rightShoulderRange}°` : '--'}</strong></div></div>{cameraError && <p className="camera-error" role="alert">{cameraError}</p>}<p className="ai-disclaimer">AI feedback is a simulation for mobility screening, not a diagnosis. Frames and landmarks remain local to this device.</p><div className="ai-actions">{status === 'tracking' ? <button className="camera-button stop" onClick={stopTracking}>STOP ANALYSIS</button> : <button className="camera-button" onClick={initializeTracking}>INITIALIZE AI TRACKING</button>}<button className="save-button" disabled={!analysis} onClick={saveSnapshot}>SAVE DIAGNOSTIC SNAPSHOT</button></div></div><div className="camera-footer"><span>TENSORFLOW.JS // MOVENET LIGHTNING</span><span>WEBGL LOCAL INFERENCE</span></div></section></div>
