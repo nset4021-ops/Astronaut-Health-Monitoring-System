@@ -9,7 +9,7 @@ function healthPalette(healthScore) {
   return { color: '#ff6f91', accent: '#ffb0bd', label: 'CRITICAL' }
 }
 
-export default function MissionHealthCore({ healthScore = 88, queueLength = 0, alertCount = 0, onSelect }) {
+export default function MissionHealthCore({ healthScore = 88, queueLength = 0, alertCount = 0, onSelect, showReadout = true }) {
   const group = useRef()
   const shell = useRef()
   const palette = useMemo(() => healthPalette(healthScore), [healthScore])
@@ -39,14 +39,14 @@ export default function MissionHealthCore({ healthScore = 88, queueLength = 0, a
     </mesh>
     <pointLight color={palette.color} intensity={healthScore >= 65 ? 1.8 : 3.4} distance={5} />
     <Sparkles count={healthScore >= 85 ? 36 : 70} scale={[3.7, 3.7, 3.7]} size={healthScore >= 65 ? 1.2 : 2} speed={pulseSpeed * 0.35} color={palette.accent} opacity={0.7} />
-    <Html center distanceFactor={7} position={[0, 0, 0.1]} style={{ pointerEvents: 'none' }}>
+    {showReadout && <Html center distanceFactor={7} position={[0, 0, 0.1]} style={{ pointerEvents: 'none' }}>
       <div style={{ color: '#e8fbf8', fontFamily: 'DM Mono, monospace', textAlign: 'center', textShadow: `0 0 18px ${palette.color}`, whiteSpace: 'nowrap' }}>
         <div style={{ color: palette.accent, fontSize: 10, letterSpacing: '0.18em' }}>MISSION HEALTH CORE</div>
         <div style={{ fontSize: 42, letterSpacing: '-0.08em', lineHeight: 1.05 }}>{healthScore}<span style={{ color: palette.color, fontSize: 18 }}>%</span></div>
         <div style={{ color: palette.color, fontSize: 10, letterSpacing: '0.2em' }}>{palette.label} // UNIFIED SCORE</div>
         <div style={{ color: '#7eaaa9', fontSize: 8, letterSpacing: '0.1em', marginTop: 8 }}>{alertCount} ALERTS · {queueLength} QUEUED</div>
       </div>
-    </Html>
+    </Html>}
   </group>
 }
 
