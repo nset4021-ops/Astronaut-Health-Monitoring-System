@@ -1,186 +1,144 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Float, OrbitControls, Sparkles, Text } from '@react-three/drei'
+import { ContactShadows, Html, OrbitControls, RoundedBox, Text } from '@react-three/drei'
 import { useRef, useState } from 'react'
 import * as THREE from 'three'
-import { metricDefinitions } from '../data/metrics'
 import DashboardLayout from './DashboardLayout'
 
-const vertexShader = `
-  varying vec3 vNormal;
-  varying vec3 vPosition;
-  void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vPosition = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`
-
-const fragmentShader = `
-  uniform float uTime;
-  varying vec3 vNormal;
-  varying vec3 vPosition;
-  void main() {
-    float fresnel = pow(1.0 - abs(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0))), 2.6);
-    float scan = smoothstep(0.36, 0.5, sin((vPosition.y * 10.0) - uTime * 4.5) * 0.5 + 0.5);
-    float flicker = 0.88 + 0.12 * sin(uTime * 5.0 + vPosition.y * 7.0);
-    vec3 cyan = vec3(0.18, 0.95, 0.92);
-    vec3 blue = vec3(0.07, 0.3, 0.53);
-    vec3 color = mix(blue, cyan, fresnel + scan * 0.22) * flicker;
-    float alpha = 0.16 + fresnel * 0.58 + scan * 0.12;
-    gl_FragColor = vec4(color, alpha);
-  }
-`
-
-function HoloCore({ onSelect }) {
-  const mesh = useRef()
-  const material = useRef()
-  const { pointer } = useThree()
-
-  useFrame((state, delta) => {
-    if (!mesh.current || !material.current) return
-    mesh.current.rotation.y += delta * 0.2
-    mesh.current.rotation.x = THREE.MathUtils.lerp(mesh.current.rotation.x, pointer.y * 0.16, 0.04)
-    mesh.current.rotation.z = THREE.MathUtils.lerp(mesh.current.rotation.z, pointer.x * -0.1, 0.04)
-    material.current.uniforms.uTime.value = state.clock.elapsedTime
-  })
-
-  return (
-    <Float speed={1.15} rotationIntensity={0.16} floatIntensity={0.28}>
-      <group>
-        <mesh ref={mesh} onClick={(event) => { event.stopPropagation(); onSelect('core') }}>
-          <icosahedronGeometry args={[1.9, 3]} />
-          <shaderMaterial
-            ref={material}
-            vertexShader={vertexShader}
-            fragmentShader={fragmentShader}
-            uniforms={{ uTime: { value: 0 } }}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[2.25, 0.008, 16, 128]} />
-          <meshBasicMaterial color="#6fffe9" transparent opacity={0.65} blending={THREE.AdditiveBlending} />
-        </mesh>
-        <mesh rotation={[0.2, Math.PI / 2, 0]}>
-          <torusGeometry args={[2.48, 0.004, 16, 128]} />
-          <meshBasicMaterial color="#4b9fff" transparent opacity={0.3} blending={THREE.AdditiveBlending} />
-        </mesh>
-        <pointLight color="#41f5e1" intensity={2.4} distance={6} />
-      </group>
-    </Float>
-  )
+const INSTRUMENT_MATERIALS = {
+  shell: { color: '#172938', roughness: 0.34, metalness: 0.72 },
+  edge: { color: '#304b5b', roughness: 0.22, metalness: 0.82 },
+  dark: { color: '#06131e', roughness: 0.2, metalness: 0.55 },
+  cyan: { color: '#67e8e0', roughness: 0.28, metalness: 0.62 },
+  amber: { color: '#ffbd5c', roughness: 0.3, metalness: 0.55 },
+  red: { color: '#ec6d68', roughness: 0.28, metalness: 0.5 },
 }
 
-function DragLayer({ children, position, onPositionChange }) {
+function Material({ type = 'shell', emissive = false }) {
+  const material = INSTRUMENT_MATERIALS[type]
+  return <meshStandardMaterial {...material} emissive={emissive ? material.color : '#000000'} emissiveIntensity={emissive ? 0.65 : 0} />
+}
+
+function InstrumentMount({ position, children, label, selected, onSelect }) {
   const group = useRef()
   const [dragging, setDragging] = useState(false)
-  const { camera, gl } = useThree()
-  const plane = useRef(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0))
-  const point = useRef(new THREE.Vector3())
+  const lastX = useRef(0)
+  const lastY = useRef(0)
+  const { gl } = useThree()
 
-  const move = (event) => {
-    if (!dragging) return
-    const bounds = gl.domElement.getBoundingClientRect()
-    const ndc = new THREE.Vector2(
-      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
-      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
-    )
-    const raycaster = new THREE.Raycaster()
-    raycaster.setFromCamera(ndc, camera)
-    raycaster.ray.intersectPlane(plane.current, point.current)
-    onPositionChange([point.current.x, point.current.y, 0])
+  useFrame((_, delta) => {
+    if (!group.current || dragging) return
+    group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, selected ? 0.04 : 0, delta * 2.8)
+    group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, selected ? -0.025 : 0, delta * 2.8)
+  })
+
+  const startDrag = (event) => {
+    event.stopPropagation()
+    setDragging(true)
+    lastX.current = event.clientX
+    lastY.current = event.clientY
+    gl.domElement.setPointerCapture(event.pointerId)
+    onSelect(label)
+  }
+  const drag = (event) => {
+    if (!dragging || !group.current) return
+    group.current.rotation.y += (event.clientX - lastX.current) * 0.012
+    group.current.rotation.x += (event.clientY - lastY.current) * 0.008
+    lastX.current = event.clientX
+    lastY.current = event.clientY
+  }
+  const stopDrag = (event) => {
+    setDragging(false)
+    if (gl.domElement.hasPointerCapture(event.pointerId)) gl.domElement.releasePointerCapture(event.pointerId)
   }
 
-  return <group ref={group} position={position} onPointerDown={(event) => { event.stopPropagation(); setDragging(true); gl.domElement.setPointerCapture(event.pointerId) }} onPointerMove={move} onPointerUp={(event) => { setDragging(false); gl.domElement.releasePointerCapture(event.pointerId) }}>
+  return <group ref={group} position={position} onPointerDown={startDrag} onPointerMove={drag} onPointerUp={stopDrag} onClick={(event) => { event.stopPropagation(); onSelect(label) }}>
     {children}
   </group>
 }
 
-function MetricNode({ metric, position, selected, onSelect, onPositionChange }) {
-  const color = metric.color
-  return <DragLayer position={position} onPositionChange={onPositionChange}>
-    <group onClick={(event) => { event.stopPropagation(); onSelect(metric.id) }}>
-      <mesh>
-        <sphereGeometry args={[0.22, 24, 24]} />
-        <meshBasicMaterial color={color} transparent opacity={selected ? 0.95 : 0.72} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.34, selected ? 0.025 : 0.012, 8, 64]} />
-        <meshBasicMaterial color={color} transparent opacity={selected ? 0.9 : 0.35} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <Text position={[0.42, 0.14, 0]} fontSize={0.14} color={color} anchorX="left">{metric.shortLabel}</Text>
-      <Text position={[0.42, -0.04, 0]} fontSize={0.19} color="#e8fbf8" anchorX="left">{metric.value} {metric.unit}</Text>
-      <Text position={[0.42, -0.23, 0]} fontSize={0.09} color="#7eaaa9" anchorX="left">DRAG TO INSPECT</Text>
-    </group>
-  </DragLayer>
+function PulseOximeter({ selected, onSelect }) {
+  return <InstrumentMount position={[-2.35, 1.2, 0.15]} label="cardio" selected={selected} onSelect={onSelect}>
+    <RoundedBox args={[1.72, 0.92, 0.38]} radius={0.12} smoothness={4}><Material /></RoundedBox>
+    <RoundedBox args={[1.5, 0.7, 0.08]} radius={0.08} smoothness={3} position={[0, 0, 0.23]}><Material type="edge" /></RoundedBox>
+    <mesh position={[0, 0.04, 0.29]}><boxGeometry args={[0.9, 0.36, 0.018]} /><Material type="dark" /></mesh>
+    <Text position={[-0.38, 0.13, 0.31]} fontSize={0.12} color="#a9ffb5" anchorX="left">SpO2</Text>
+    <Text position={[-0.38, -0.05, 0.31]} fontSize={0.18} color="#e9fffb" anchorX="left">97%</Text>
+    <Text position={[0.2, -0.05, 0.31]} fontSize={0.13} color="#67e8e0" anchorX="left">78</Text>
+    <mesh position={[0.64, 0.17, 0.3]}><sphereGeometry args={[0.045, 16, 16]} /><Material type="cyan" emissive /></mesh>
+    <Text position={[-0.78, -0.67, 0]} fontSize={0.11} color="#67e8e0" anchorX="left">CARDIO / PULSE OX</Text>
+    <Text position={[-0.78, -0.84, 0]} fontSize={0.08} color="#7898a2" anchorX="left">PRESS TO ROTATE</Text>
+  </InstrumentMount>
 }
 
-function MobilityStation({ onOpen }) {
-  return <group position={[0, -2.2, 0]} onClick={(event) => { event.stopPropagation(); onOpen() }}>
-    <mesh>
-      <boxGeometry args={[2.7, 0.58, 0.12]} />
-      <meshBasicMaterial color="#0f4b58" transparent opacity={0.48} blending={THREE.AdditiveBlending} />
-    </mesh>
-    <mesh position={[-1.34, 0, 0.08]}>
-      <boxGeometry args={[0.03, 0.36, 0.04]} />
-      <meshBasicMaterial color="#6fffe9" />
-    </mesh>
-    <Text position={[-1.18, 0.08, 0.1]} fontSize={0.12} color="#6fffe9" anchorX="left">MOBILITY / POSE TRACKER</Text>
-    <Text position={[-1.18, -0.13, 0.1]} fontSize={0.1} color="#e8fbf8" anchorX="left">CAMERA STATION // CLICK TO ARM</Text>
+function Dosimeter({ selected, onSelect }) {
+  return <InstrumentMount position={[2.2, 1.12, 0.12]} label="radiation" selected={selected} onSelect={onSelect}>
+    <RoundedBox args={[1.35, 1.05, 0.42]} radius={0.14} smoothness={4}><Material /></RoundedBox>
+    <mesh position={[0, 0.18, 0.27]}><boxGeometry args={[0.88, 0.32, 0.02]} /><Material type="dark" /></mesh>
+    <Text position={[-0.34, 0.2, 0.3]} fontSize={0.12} color="#ffbd5c" anchorX="left">0.42</Text>
+    <Text position={[0.18, 0.2, 0.3]} fontSize={0.08} color="#7898a2" anchorX="left">mSv</Text>
+    <mesh position={[0, -0.2, 0.27]}><boxGeometry args={[0.88, 0.04, 0.02]} /><Material type="amber" emissive /></mesh>
+    <mesh position={[-0.47, -0.26, 0.27]}><boxGeometry args={[0.05, 0.16, 0.02]} /><Material type="red" emissive /></mesh>
+    <mesh position={[0.45, 0.02, 0.1]} rotation={[0, Math.PI / 2, 0]}><boxGeometry args={[0.24, 0.42, 0.06]} /><Material type="dark" /></mesh>
+    <Text position={[-0.62, -0.72, 0]} fontSize={0.11} color="#ffbd5c" anchorX="left">RADIATION / DOSIMETER</Text>
+    <Text position={[-0.62, -0.89, 0]} fontSize={0.08} color="#7898a2" anchorX="left">CUMULATIVE 24H DOSE</Text>
+  </InstrumentMount>
+}
+
+function MobilityBezel({ onOpen }) {
+  return <group position={[0, -2.18, 0.2]} onClick={(event) => { event.stopPropagation(); onOpen() }}>
+    <RoundedBox args={[3.25, 0.78, 0.3]} radius={0.1} smoothness={4}><Material /></RoundedBox>
+    <RoundedBox args={[2.72, 0.5, 0.08]} radius={0.06} smoothness={3} position={[0, 0, 0.2]}><Material type="dark" /></RoundedBox>
+    <mesh position={[-1.08, 0, 0.26]}><boxGeometry args={[0.78, 0.25, 0.02]} /><Material type="cyan" emissive /></mesh>
+    <mesh position={[-0.13, 0, 0.26]}><boxGeometry args={[0.78, 0.25, 0.02]} /><Material type="amber" emissive /></mesh>
+    <mesh position={[0.82, 0, 0.26]}><boxGeometry args={[0.45, 0.25, 0.02]} /><Material type="dark" /></mesh>
+    <Text position={[-1.25, 0.04, 0.32]} fontSize={0.11} color="#06131e" anchorX="left">POSE</Text>
+    <Text position={[-0.3, 0.04, 0.32]} fontSize={0.11} color="#06131e" anchorX="left">READY</Text>
+    <Text position={[-1.34, -0.21, 0.31]} fontSize={0.1} color="#67e8e0" anchorX="left">MOBILITY / MEDICAL ANALYSIS BEZEL</Text>
+    <Text position={[-1.34, -0.39, 0.31]} fontSize={0.08} color="#7898a2" anchorX="left">CLICK TO ARM CAMERA ALIGNMENT</Text>
   </group>
 }
 
-function AlertBeacon({ alert, onAcknowledge }) {
-  if (!alert) return null
-  const color = alert.status === 'urgent' ? '#ff8d7c' : '#ffce6a'
-  return <group position={[0, 2.9, 0]} onClick={(event) => { event.stopPropagation(); onAcknowledge(alert.id) }}>
-    <mesh>
-      <octahedronGeometry args={[0.13, 0]} />
-      <meshBasicMaterial color={color} transparent opacity={0.9} blending={THREE.AdditiveBlending} />
-    </mesh>
-    <Text position={[0.24, 0.07, 0]} fontSize={0.12} color={color} anchorX="left">{alert.severity} // {alert.title}</Text>
-    <Text position={[0.24, -0.13, 0]} fontSize={0.09} color="#7eaaa9" anchorX="left">CLICK TO ACKNOWLEDGE LOCALLY</Text>
+function CockpitDeck() {
+  return <group position={[0, 0, -0.6]}>
+    <RoundedBox args={[6.7, 5.8, 0.16]} radius={0.18} smoothness={5} position={[0, 0, -0.12]}><Material type="dark" /></RoundedBox>
+    <mesh position={[0, 0, -0.02]}><boxGeometry args={[6.3, 5.42, 0.04]} /><meshStandardMaterial color="#102333" roughness={0.42} metalness={0.65} /></mesh>
+    <mesh position={[0, -0.16, 0.03]}><boxGeometry args={[0.025, 4.9, 0.03]} /><Material type="edge" /></mesh>
+    <mesh position={[0, 0.12, 0.03]}><boxGeometry args={[6.1, 0.025, 0.03]} /><Material type="edge" /></mesh>
   </group>
 }
 
-function SceneContent({ selectedMetric, onSelectMetric, nodePositions, onPositionChange, onOpenMobility, onOpenBriefing, activeAlert, onAcknowledge, healthScore, queueLength, alertCount, voice, onApplyCountermeasure }) {
+function CockpitScene({ selectedMetric, onSelectMetric, onOpenMobility, onOpenBriefing, activeAlert, onAcknowledge, healthScore, queueLength, alertCount, voice, onApplyCountermeasure }) {
+  const [selectedInstrument, setSelectedInstrument] = useState(selectedMetric)
   const dashboard = useRef()
-  const { pointer } = useThree()
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!dashboard.current) return
-    dashboard.current.rotation.y = THREE.MathUtils.lerp(dashboard.current.rotation.y, pointer.x * 0.12, 0.025)
-    dashboard.current.rotation.x = THREE.MathUtils.lerp(dashboard.current.rotation.x, pointer.y * -0.08, 0.025)
-    dashboard.current.rotation.z += delta * 0.008
+    dashboard.current.rotation.y = THREE.MathUtils.lerp(dashboard.current.rotation.y, state.pointer.x * 0.018, delta * 1.8)
+    dashboard.current.rotation.x = THREE.MathUtils.lerp(dashboard.current.rotation.x, state.pointer.y * -0.012, delta * 1.8)
   })
-  return (
-    <>
-      <ambientLight intensity={0.1} />
-      <Sparkles count={140} scale={[12, 8, 8]} size={1.1} speed={0.18} color="#82fff2" opacity={0.5} />
-      <Sparkles count={45} scale={[7, 5, 5]} size={2.2} speed={0.08} color="#669eff" opacity={0.24} />
-      <group ref={dashboard}>
-        <DashboardLayout healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} activeAlert={activeAlert} voice={voice} onSelectMetric={onSelectMetric} onOpenMobility={onOpenMobility} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} />
-        <Text position={[-3.4, 2.55, 0]} fontSize={0.14} color="#7eaaa9" anchorX="left">ORBITAL HEALTH // HOLOGRAPHIC CONSOLE</Text>
-        <Text position={[-3.4, 2.28, 0]} fontSize={0.3} color="#e8fbf8" anchorX="left">MISSION READINESS</Text>
-        <Text position={[-0.48, 2.28, 0]} fontSize={0.3} color="#6fffe9" anchorX="left">88%</Text>
-        <AlertBeacon alert={activeAlert} onAcknowledge={onAcknowledge} />
-        {metricDefinitions.map((metric) => <MetricNode key={metric.id} metric={metric} position={nodePositions[metric.id]} selected={selectedMetric === metric.id} onSelect={onSelectMetric} onPositionChange={(next) => onPositionChange(metric.id, next)} />)}
-        <MobilityStation onOpen={onOpenMobility} />
-      </group>
-      <OrbitControls makeDefault enableZoom enablePan rotateSpeed={0.65} minDistance={4.5} maxDistance={11} />
-    </>
-  )
+  const selectInstrument = (id) => { setSelectedInstrument(id); onSelectMetric(id) }
+  return <>
+    <color attach="background" args={['#07131f']} />
+    <ambientLight intensity={1.15} color="#b9d7d8" />
+    <directionalLight position={[-3, 5, 5]} intensity={2.6} color="#d5ffff" />
+    <directionalLight position={[4, 2, 1]} intensity={1.8} color="#8db6ff" />
+    <pointLight position={[0, -1, 2]} intensity={4} distance={8} color="#52d9d1" />
+    <group ref={dashboard}>
+      <CockpitDeck />
+      <PulseOximeter selected={selectedInstrument === 'cardio'} onSelect={selectInstrument} />
+      <Dosimeter selected={selectedInstrument === 'radiation'} onSelect={selectInstrument} />
+      <MobilityBezel onOpen={onOpenMobility} />
+      <DashboardLayout healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} activeAlert={activeAlert} voice={voice} onSelectMetric={selectInstrument} onOpenMobility={onOpenMobility} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} />
+    </group>
+    <ContactShadows position={[0, -2.92, 0]} opacity={0.55} scale={9} blur={2.4} far={4.5} />
+    <OrbitControls makeDefault enableZoom enablePan rotateSpeed={0.35} minDistance={5.5} maxDistance={10} target={[0, 0, 0]} />
+    {activeAlert && <Html position={[0, 2.7, 0.2]} center style={{ pointerEvents: 'auto' }}><button className="scene-alert-beacon" onClick={() => onAcknowledge(activeAlert.id)}>{activeAlert.severity} / ACKNOWLEDGE</button></Html>}
+  </>
 }
 
-export function HologramScene({ selectedMetric, onSelectMetric, onOpenMobility, onOpenBriefing, activeAlert, onAcknowledge, healthScore, queueLength, alertCount, voice, onApplyCountermeasure }) {
-  const [nodePositions, setNodePositions] = useState({ cardio: [-3.0, 1.25, 0], bone: [2.8, 1.15, 0], immune: [-2.8, -1.05, 0], behavior: [2.55, -1.0, 0] })
-  return (
-    <div className="immersive-canvas" aria-label="Interactive 3D astronaut health dashboard">
-      <Canvas camera={{ position: [0, 0, 7.4], fov: 42 }} dpr={[1, 1.8]} gl={{ alpha: true, antialias: true }}>
-        <SceneContent selectedMetric={selectedMetric} onSelectMetric={onSelectMetric} nodePositions={nodePositions} onPositionChange={(id, position) => setNodePositions((current) => ({ ...current, [id]: position }))} onOpenMobility={onOpenMobility} onOpenBriefing={onOpenBriefing} activeAlert={activeAlert} onAcknowledge={onAcknowledge} healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} voice={voice} onApplyCountermeasure={onApplyCountermeasure} />
-      </Canvas>
-    </div>
-  )
+export function HologramScene(props) {
+  return <div className="immersive-canvas physical-cockpit" aria-label="Interactive 3D astronaut health cockpit">
+    <Canvas camera={{ position: [0, 0.15, 8.2], fov: 42 }} dpr={[1, 1.8]} gl={{ alpha: false, antialias: true }}>
+      <CockpitScene {...props} />
+    </Canvas>
+  </div>
 }

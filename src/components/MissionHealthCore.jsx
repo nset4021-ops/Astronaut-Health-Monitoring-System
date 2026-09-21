@@ -1,4 +1,4 @@
-import { Html, Sparkles } from '@react-three/drei'
+import { Html, RoundedBox } from '@react-three/drei'
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -25,20 +25,15 @@ export default function MissionHealthCore({ healthScore = 88, queueLength = 0, a
   })
 
   return <group ref={group} onClick={(event) => { event.stopPropagation(); onSelect?.('mission-health-core') }}>
-    <mesh ref={shell}>
-      <icosahedronGeometry args={[1.56, 2]} />
-      <meshBasicMaterial color={palette.color} transparent opacity={0.12} wireframe blending={THREE.AdditiveBlending} />
-    </mesh>
-    <mesh rotation={[Math.PI / 2, 0, 0]}>
-      <torusGeometry args={[1.82, 0.014, 12, 96]} />
-      <meshBasicMaterial color={palette.accent} transparent opacity={0.72} blending={THREE.AdditiveBlending} />
-    </mesh>
-    <mesh rotation={[0.45, 0.8, 0]}>
-      <torusGeometry args={[1.98, 0.008, 10, 96]} />
-      <meshBasicMaterial color={palette.color} transparent opacity={0.34} blending={THREE.AdditiveBlending} />
-    </mesh>
-    <pointLight color={palette.color} intensity={healthScore >= 65 ? 1.8 : 3.4} distance={5} />
-    <Sparkles count={healthScore >= 85 ? 36 : 70} scale={[3.7, 3.7, 3.7]} size={healthScore >= 65 ? 1.2 : 2} speed={pulseSpeed * 0.35} color={palette.accent} opacity={0.7} />
+    <RoundedBox ref={shell} args={[2.5, 1.05, 0.34]} radius={0.14} smoothness={4} position={[0, 0.15, 0]}>
+      <meshStandardMaterial color="#172938" roughness={0.32} metalness={0.78} />
+    </RoundedBox>
+    <mesh position={[0, 0.18, 0.2]}><boxGeometry args={[2.08, 0.62, 0.03]} /><meshStandardMaterial color="#06131e" roughness={0.18} metalness={0.58} /></mesh>
+    <mesh position={[-0.8, 0.18, 0.23]}><boxGeometry args={[0.45, 0.035, 0.02]} /><meshStandardMaterial color={palette.color} emissive={palette.color} emissiveIntensity={0.7} /></mesh>
+    <mesh position={[-0.8, 0.06, 0.23]}><boxGeometry args={[0.28, 0.035, 0.02]} /><meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.6} /></mesh>
+    <mesh position={[0.84, 0.18, 0.23]}><sphereGeometry args={[0.07, 16, 16]} /><meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.8} /></mesh>
+    <mesh position={[0, -0.48, 0.08]}><boxGeometry args={[2.3, 0.06, 0.08]} /><meshStandardMaterial color={palette.color} roughness={0.28} metalness={0.7} /></mesh>
+    <pointLight color={palette.color} intensity={healthScore >= 65 ? 1.2 : 2.2} distance={4} />
     {showReadout && <Html center distanceFactor={7} position={[0, 0, 0.1]} style={{ pointerEvents: 'none' }}>
       <div style={{ color: '#e8fbf8', fontFamily: 'DM Mono, monospace', textAlign: 'center', textShadow: `0 0 18px ${palette.color}`, whiteSpace: 'nowrap' }}>
         <div style={{ color: palette.accent, fontSize: 10, letterSpacing: '0.18em' }}>MISSION HEALTH CORE</div>
