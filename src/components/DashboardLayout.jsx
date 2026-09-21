@@ -2,6 +2,8 @@ import { Activity, Camera, CheckCircle2, Clock3, Dna, Droplets, HeartPulse, Mic,
 import { Html } from '@react-three/drei'
 import MissionHealthCore from './MissionHealthCore'
 
+const LIQUID_GLASS_CLASSES = 'relative overflow-hidden rounded-2xl bg-slate-900/40 backdrop-blur-2xl border border-white/15 shadow-[0_8px_32px_0_rgba(0,255,255,0.1)] before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/10 before:to-transparent before:pointer-events-none'
+
 const healthMetrics = [
   { label: 'CARDIOVASCULAR', value: '78', unit: 'BPM', delta: '+4.8%', detail: 'Resting heart rate', tone: 'cyan', percent: 78, icon: HeartPulse, state: 'WATCH' },
   { label: 'RADIATION DOSE', value: '0.42', unit: 'mSv / 24h', delta: '-0.06', detail: 'Dosimeter exposure', tone: 'green', percent: 28, icon: ShieldAlert, state: 'NOMINAL' },
@@ -30,7 +32,7 @@ function PanelHeader({ index, title, status, tone = 'green' }) {
 
 function GlassMetric({ metric }) {
   const Icon = metric.icon
-  return <article className={`glass-metric tone-${metric.tone}`}>
+  return <article className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface glass-metric tone-${metric.tone}`}>
     <div className="glass-metric-heading"><Icon size={15} strokeWidth={1.7} /><span>{metric.label}</span><b>{metric.state}</b></div>
     <div className="glass-metric-value"><strong>{metric.value}</strong><small>{metric.unit}</small><em>{metric.delta}</em></div>
     <div className="glass-metric-track"><span style={{ width: `${metric.percent}%` }} /></div>
@@ -39,9 +41,9 @@ function GlassMetric({ metric }) {
 }
 
 function MobilityConsole({ onOpenMobility }) {
-  return <aside className="command-left command-panel glass-panel">
+  return <aside className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface command-left command-panel glass-panel`}>
     <PanelHeader index="01" title="Mobility station" status="CAMERA READY" />
-    <button className="mobility-target" style={{ pointerEvents: 'auto' }} onClick={onOpenMobility}>
+    <button className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface mobility-target`} style={{ pointerEvents: 'auto' }} onClick={onOpenMobility}>
       <div className="mobility-target-grid" />
       <div className="mobility-silhouette"><span /><i /><b /></div>
       <div className="mobility-target-copy"><strong>ALIGNMENT GATE</strong><small>FULL BODY / LOCAL POSE TRACKING</small></div>
@@ -53,11 +55,11 @@ function MobilityConsole({ onOpenMobility }) {
 }
 
 function DecisionConsole({ activeAlert, alertCount, onOpenBriefing, onApplyCountermeasure, voice }) {
-  return <aside className="command-right command-panel glass-panel">
+  return <aside className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface command-right command-panel glass-panel`}>
     <PanelHeader index="03" title="Mission watch" status={activeAlert ? `${alertCount} OPEN` : 'ALL CLEAR'} tone={activeAlert ? 'amber' : 'green'} />
     <div className={`watch-banner ${activeAlert ? 'has-alert' : ''}`}><StatusDot tone={activeAlert ? 'amber' : 'green'} /><div><strong>{activeAlert ? activeAlert.title : 'Operating envelope nominal'}</strong><small>{activeAlert ? activeAlert.body : 'No immediate countermeasure required.'}</small></div></div>
     {activeAlert && <button className="command-alert-action" style={{ pointerEvents: 'auto' }} onClick={onApplyCountermeasure}><Sparkles size={14} /> APPLY COUNTERMEASURE <span>↗</span></button>}
-    <button className="briefing-card" style={{ pointerEvents: 'auto' }} onClick={onOpenBriefing}><div><span className="command-eyebrow">NEXT CREW ACTION</span><strong>Daily recovery briefing</strong><small>Sleep · stress · mission readiness</small></div><Clock3 size={18} /></button>
+    <button className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface briefing-card`} style={{ pointerEvents: 'auto' }} onClick={onOpenBriefing}><div><span className="command-eyebrow">NEXT CREW ACTION</span><strong>Daily recovery briefing</strong><small>Sleep · stress · mission readiness</small></div><Clock3 size={18} /></button>
     <div className="voice-console"><div><Mic size={14} /><span>VOICE LINK</span></div><strong>{voice?.isListening ? 'LISTENING...' : 'READY FOR COMMAND'}</strong><small>{voice?.transcript || '“Run daily briefing”'}</small></div>
   </aside>
 }
@@ -65,7 +67,7 @@ function DecisionConsole({ activeAlert, alertCount, onOpenBriefing, onApplyCount
 function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, voice, onOpenMobility, onOpenBriefing, onApplyCountermeasure }) {
   return <Html fullscreen transform={false} style={{ pointerEvents: 'none' }}>
     <div className="command-center-shell">
-      <header className="command-topbar command-panel glass-panel">
+      <header className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface command-topbar command-panel glass-panel`}>
         <div className="command-brand"><span className="command-brand-mark">◈</span><div><span className="command-eyebrow">AURORA MEDICAL // HAB-01</span><strong>ORBITAL <i>HEALTH</i></strong></div></div>
         <div className="command-mission"><span>MISSION DAY 184 · STATION LOCAL</span><b>06:42:18 UTC</b><em><StatusDot tone="green" /> SYSTEM ONLINE / DELAY 00:03:42</em></div>
         <div className="command-score"><span>UNIFIED READINESS</span><strong>{healthScore}%</strong></div>
@@ -73,7 +75,7 @@ function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, 
       </header>
 
       <MobilityConsole onOpenMobility={onOpenMobility} />
-      <section className="command-center command-panel glass-panel">
+      <section className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface command-center command-panel glass-panel`}>
         <PanelHeader index="02" title="Unified health matrix" status={healthScore >= 85 ? 'OPTIMAL' : 'REVIEW'} tone={healthScore >= 85 ? 'green' : 'amber'} />
         <div className="matrix-intro"><div><span className="command-eyebrow">CREW MEMBER / A. RIVERA</span><strong>Mission physiology overview</strong></div><div className="matrix-sync"><Activity size={14} /><span>LIVE MODEL</span><b>v2.4</b></div></div>
         <div className="glass-metric-grid">{healthMetrics.map((metric) => <GlassMetric key={metric.label} metric={metric} />)}</div>
