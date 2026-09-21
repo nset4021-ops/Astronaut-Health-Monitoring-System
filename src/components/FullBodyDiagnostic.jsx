@@ -141,7 +141,7 @@ function speakCue(text) {
 }
 
 function saveDiagnostic(payload, onDiagnosticComplete) {
-  const record = { id: crypto.randomUUID(), type: 'full-body-diagnostic', observedAt: new Date().toISOString(), source: 'tensorflow-movenet', payload }
+  const record = { id: crypto.randomUUID(), type: 'full-body-diagnostic', observedAt: new Date().toISOString(), source: 'tensorflow-movenet', diagnostic: payload.overallScore >= 80 ? 'MOBILITY OPTIMAL' : 'MUSCLE TONE REVIEW', metrics: payload, payload }
   try {
     const current = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]')
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify([record, ...current].slice(0, 20)))
@@ -160,6 +160,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const stepStartedRef = useRef(null)
   const scoresRef = useRef([])
   const lastCueRef = useRef('')
+  const statusRef = useRef('idle')
+  const stepIndexRef = useRef(-1)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [verification, setVerification] = useState({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
@@ -175,6 +177,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     frameRef.current = null; streamRef.current = null; detectorRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
     calibrationStartRef.current = null; stepStartedRef.current = null
+    statusRef.current = 'idle'; stepIndexRef.current = -1
     setStatus('idle'); setStepIndex(-1); setStepAnalysis(null); setSecondsLeft(null); setVerification({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
   }, [])
 
@@ -184,7 +187,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     const payload = { overallScore, stepScores, protocol: STEPS.map(({ id, title }) => ({ id, title })), diagnostic: overallScore >= 80 ? 'MUSCLE TONE NOMINAL' : overallScore >= 60 ? 'ADAPTATION MONITOR' : 'REVIEW REQUIRED' }
     const record = saveDiagnostic(payload, onDiagnosticComplete)
     onSnapshotSaved?.(record)
-    setResult(payload); setStatus('complete'); setSecondsLeft(null); speakCue(`Diagnostic complete. Physical health and muscle tone score ${overallScore} out of 100.`)
+    statusRef.current = 'complete'; setResult(payload); setStatus('complete'); setSecondsLeft(null); speakCue(`Diagnostic complete. Physical health and muscle tone score ${overallScore} out of 100.`)
   }, [onDiagnosticComplete, onSnapshotSaved])
 
   const trackFrame = useCallback(async (timestamp) => {
@@ -195,42 +198,44 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     const keypoints = poses[0]?.keypoints || []
     const nextVerification = verifyFullBody(keypoints, video.videoWidth, video.videoHeight)
     setVerification(nextVerification)
-    const activeStep = STEPS[stepIndex]
+    const currentStatus = statusRef.current
+    const currentStepIndex = stepIndexRef.current
+    const activeStep = STEPS[currentStepIndex]
     if (canvasRef.current) drawSkeleton(canvasRef.current, video, keypoints, nextVerification, activeStep)
 
-    if (status === 'calibrating' && nextVerification.ready) {
+    if (currentStatus === 'calibrating' && nextVerification.ready) {
       calibrationStartRef.current ||= timestamp
       if (timestamp - calibrationStartRef.current >= CALIBRATION_HOLD_MS) {
-        setStatus('active'); setStepIndex(0); stepStartedRef.current = timestamp; speakCue(STEPS[0].instruction)
+        statusRef.current = 'active'; stepIndexRef.current = 0; setStatus('active'); setStepIndex(0); stepStartedRef.current = timestamp; speakCue(STEPS[0].instruction)
       }
-    } else if (status === 'calibrating') calibrationStartRef.current = null
+    } else if (currentStatus === 'calibrating') calibrationStartRef.current = null
 
-    if (status === 'active' && activeStep && nextVerification.ready) {
+    if (currentStatus === 'active' && activeStep && nextVerification.ready) {
       const nextAnalysis = analyzeStep(activeStep.id, keypoints)
       setStepAnalysis(nextAnalysis)
       setSecondsLeft(Math.max(0, Math.ceil((STEP_DURATION_MS - (timestamp - stepStartedRef.current)) / 1000)))
       if (nextAnalysis.cue !== lastCueRef.current && nextAnalysis.cue !== 'Hold position') { lastCueRef.current = nextAnalysis.cue; speakCue(nextAnalysis.cue) }
       if (timestamp - stepStartedRef.current >= STEP_DURATION_MS) {
         scoresRef.current = [...scoresRef.current, { id: activeStep.id, score: nextAnalysis.score, symmetry: nextAnalysis.symmetry }]
-        if (stepIndex === STEPS.length - 1) finish()
-        else { const nextIndex = stepIndex + 1; setStepIndex(nextIndex); stepStartedRef.current = timestamp; setStepAnalysis(null); speakCue(STEPS[nextIndex].instruction) }
+        if (currentStepIndex === STEPS.length - 1) finish()
+        else { const nextIndex = currentStepIndex + 1; stepIndexRef.current = nextIndex; setStepIndex(nextIndex); stepStartedRef.current = timestamp; setStepAnalysis(null); speakCue(STEPS[nextIndex].instruction) }
       }
     }
     frameRef.current = requestAnimationFrame(trackFrame)
-  }, [finish, status, stepIndex])
+  }, [finish])
 
   const start = useCallback(async () => {
     setError('')
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { setError('Camera requires HTTPS or localhost in a supported browser.'); setStatus('error'); return }
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { setError('Camera requires HTTPS or localhost in a supported browser.'); statusRef.current = 'error'; setStatus('error'); return }
     try {
-      setStatus('requesting')
+      statusRef.current = 'requesting'; setStatus('requesting')
       const stream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
       streamRef.current = stream; videoRef.current.srcObject = stream; await videoRef.current.play()
-      setStatus('loading'); await tf.setBackend('webgl'); await tf.ready()
+      statusRef.current = 'loading'; setStatus('loading'); await tf.setBackend('webgl'); await tf.ready()
       detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, enableSmoothing: true })
-      scoresRef.current = []; setStatus('calibrating'); speakCue('Step back until your full body is visible.')
+      scoresRef.current = []; statusRef.current = 'calibrating'; setStatus('calibrating'); speakCue('Step back until your full body is visible.')
       frameRef.current = requestAnimationFrame(trackFrame)
-    } catch (caught) { stop(); setError(caught?.message || 'Camera or pose model unavailable.'); setStatus('error') }
+    } catch (caught) { stop(); setError(caught?.message || 'Camera or pose model unavailable.'); statusRef.current = 'error'; setStatus('error') }
   }, [stop, trackFrame])
 
   useEffect(() => () => stop(), [stop])

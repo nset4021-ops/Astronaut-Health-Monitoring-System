@@ -1,5 +1,5 @@
 import { Camera, Check, Crosshair, Hand, Mic, Rotate3D, WifiOff, X } from 'lucide-react'
-import AITrackingDiagnostic from './AITrackingDiagnostic'
+import FullBodyDiagnostic from './FullBodyDiagnostic'
 
 function Readout({ label, value, tone = 'cyan' }) {
   return <div className="readout"><span>{label}</span><strong className={`tone-${tone}`}>{value}</strong></div>
@@ -21,7 +21,7 @@ export function ImmersiveHud({ state, activeAlerts, onTrigger, onOpenMobility, o
 }
 
 export function CameraRig({ onClose, onSaved }) {
-  return <AITrackingDiagnostic onClose={onClose} onSnapshotSaved={onSaved} />
+  return <FullBodyDiagnostic onClose={onClose} onDiagnosticComplete={onSaved} />
 }
 
 export function PoseDiagnostics({ activeAlerts }) {
