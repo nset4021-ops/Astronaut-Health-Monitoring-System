@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import './full-body-diagnostic.css'
 
 const VIDEO_CONSTRAINTS = {
-  video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+  video: { width: { ideal: 1280 }, height: { ideal: 720 } },
   audio: false,
 }
 
@@ -254,6 +254,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const statusRef = useRef('idle')
   const stepIndexRef = useRef(-1)
   const keypointsRef = useRef([])
+  const facingModeRef = useRef('user')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [verification, setVerification] = useState({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
@@ -262,6 +263,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const [jointTelemetry, setJointTelemetry] = useState({})
   const [secondsLeft, setSecondsLeft] = useState(null)
   const [result, setResult] = useState(null)
+  const [facingMode, setFacingMode] = useState('user')
 
   const stop = useCallback(() => {
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
@@ -282,6 +284,40 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     onSnapshotSaved?.(record)
     statusRef.current = 'complete'; setResult(payload); setStatus('complete'); setSecondsLeft(null); speakCue(`Diagnostic complete. Physical health and muscle tone score ${overallScore} out of 100.`)
   }, [onDiagnosticComplete, onSnapshotSaved])
+
+  const requestCamera = useCallback(async (nextFacingMode) => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      ...VIDEO_CONSTRAINTS,
+      video: { ...VIDEO_CONSTRAINTS.video, facingMode: nextFacingMode },
+    })
+    streamRef.current = stream
+    videoRef.current.srcObject = stream
+    await videoRef.current.play()
+    facingModeRef.current = nextFacingMode
+    setFacingMode(nextFacingMode)
+    return stream
+  }, [])
+
+  const switchCamera = useCallback(async () => {
+    if (!streamRef.current || !navigator.mediaDevices?.getUserMedia) return
+    const previousFacingMode = facingModeRef.current
+    const nextFacingMode = previousFacingMode === 'user' ? 'environment' : 'user'
+    streamRef.current.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    try {
+      await requestCamera(nextFacingMode)
+      setError('')
+    } catch (switchError) {
+      try {
+        await requestCamera(previousFacingMode)
+        setError(`Alternate camera unavailable. Continuing with ${previousFacingMode === 'user' ? 'front' : 'back'} camera.`)
+      } catch {
+        statusRef.current = 'error'
+        setStatus('error')
+        setError(switchError?.message || 'Unable to switch camera. Check camera permissions and device availability.')
+      }
+    }
+  }, [requestCamera])
 
   const trackFrame = useCallback(async (timestamp) => {
     const video = videoRef.current
@@ -324,14 +360,13 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { setError('Camera requires HTTPS or localhost in a supported browser.'); statusRef.current = 'error'; setStatus('error'); return }
     try {
       statusRef.current = 'requesting'; setStatus('requesting')
-      const stream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
-      streamRef.current = stream; videoRef.current.srcObject = stream; await videoRef.current.play()
+      await requestCamera(facingModeRef.current)
       statusRef.current = 'loading'; setStatus('loading'); await tf.setBackend('webgl'); await tf.ready()
       detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, enableSmoothing: true })
       scoresRef.current = []; statusRef.current = 'calibrating'; setStatus('calibrating'); speakCue('Step back until your full body is visible.')
       frameRef.current = requestAnimationFrame(trackFrame)
     } catch (caught) { stop(); setError(caught?.message || 'Camera or pose model unavailable.'); statusRef.current = 'error'; setStatus('error') }
-  }, [stop, trackFrame])
+  }, [requestCamera, stop, trackFrame])
 
   useEffect(() => () => stop(), [stop])
   const activeStep = STEPS[stepIndex]
@@ -339,7 +374,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
 
   return <div className="full-body-layer"><section className="full-body-console" role="dialog" aria-modal="true" aria-label="Full body muscle tone diagnostic">
     <header className="full-body-header"><div><span className="full-body-eyebrow">AURORA MEDICAL // FLEX & HOLD PROTOCOL</span><h2>Full-body diagnostic</h2></div><button className="full-body-close" onClick={() => { stop(); onClose?.() }} aria-label="Close diagnostic">×</button></header>
-    <div className="full-body-visual-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" />{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
+    <div className="full-body-visual-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" />{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-camera-controls absolute top-4 right-4 z-50"><button type="button" className="bg-slate-900/80 hover:bg-slate-800 text-cyan-400 border border-cyan-500/30 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg cursor-pointer flex items-center gap-2" onClick={switchCamera} disabled={!streamRef.current || ['requesting', 'loading'].includes(status)} aria-label={`Switch camera. Current camera: ${facingMode === 'user' ? 'Front' : 'Back'}`}><span aria-hidden="true">⇄</span><span>Switch Camera</span><small>{facingMode === 'user' ? 'Front' : 'Back'}</small></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
     <div className="full-body-content"><div className="full-body-protocol"><div className="full-body-protocol-top"><span className="full-body-eyebrow">{status === 'complete' ? 'PROTOCOL COMPLETE' : activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'complete' ? `${result?.overallScore || 0} / 100` : activeStep ? activeStep.title : verification.message}</strong></div>{status === 'complete' ? <div className="full-body-result"><span>PHYSICAL HEALTH & MUSCLE TONE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div> : <><p className="full-body-instruction">{activeStep ? activeStep.instruction : verification.detail}</p><p className="full-body-cue">{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</p><div className="full-body-progress"><span style={{ width: `${progress}%` }} /></div></>}</div><div className="full-body-live-readout"><div><span>POSE CONFIDENCE</span><strong>{verification.ready ? 'LOCKED' : 'SEARCHING'}</strong></div><div><span>LIVE SCORE</span><strong>{stepAnalysis ? `${stepAnalysis.score}%` : '--'}</strong></div><div><span>SYMMETRY</span><strong>{stepAnalysis ? `${stepAnalysis.symmetry}%` : '--'}</strong></div><div><span>TIME REMAINING</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong></div><AngleBar label="LEFT ELBOW" value={jointTelemetry.leftElbow} /><AngleBar label="RIGHT ELBOW" value={jointTelemetry.rightElbow} /><AngleBar label="LEFT KNEE" value={jointTelemetry.leftKnee} /><AngleBar label="RIGHT KNEE" value={jointTelemetry.rightKnee} /><AngleBar label="SHOULDER L" value={jointTelemetry.leftShoulder} /><AngleBar label="SHOULDER R" value={jointTelemetry.rightShoulder} /></div></div>
     {error && <p className="full-body-error" role="alert">{error}</p>}
     <footer className="full-body-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE FULL-BODY CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <span className="full-body-locked">{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status.toUpperCase()}</span>}<span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
