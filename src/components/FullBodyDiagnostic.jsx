@@ -1,7 +1,10 @@
 import '@tensorflow/tfjs-backend-webgl'
 import * as tf from '@tensorflow/tfjs'
 import * as poseDetection from '@tensorflow-models/pose-detection'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { OrbitControls } from '@react-three/drei'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as THREE from 'three'
 import './full-body-diagnostic.css'
 
 const VIDEO_CONSTRAINTS = {
@@ -20,6 +23,7 @@ const CONFIDENCE_THRESHOLD = 0.42
 const CALIBRATION_HOLD_MS = 1500
 const STEP_DURATION_MS = 8000
 const STORAGE_KEY = 'orbital-full-body-diagnostic-v1'
+const AVATAR_BONES = SKELETON
 
 const STEPS = [
   { id: 'neutral', number: '01', title: 'Neutral stance', instruction: 'Stand tall with feet shoulder-width apart.', cue: 'Relax shoulders and face the camera.' },
@@ -38,11 +42,51 @@ function usablePoint(point) {
 
 function angleAtJoint(first, vertex, last) {
   if (!first || !vertex || !last) return null
-  const a = { x: first.x - vertex.x, y: first.y - vertex.y }
-  const b = { x: last.x - vertex.x, y: last.y - vertex.y }
-  const magnitude = Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y)
+  const a = { x: first.x - vertex.x, y: first.y - vertex.y, z: (first.z || 0) - (vertex.z || 0) }
+  const b = { x: last.x - vertex.x, y: last.y - vertex.y, z: (last.z || 0) - (vertex.z || 0) }
+  const magnitude = Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z)
   if (!magnitude) return null
-  return Math.round((Math.acos(Math.min(1, Math.max(-1, (a.x * b.x + a.y * b.y) / magnitude))) * 180) / Math.PI)
+  return Math.round((Math.acos(Math.min(1, Math.max(-1, (a.x * b.x + a.y * b.y + a.z * b.z) / magnitude))) * 180) / Math.PI)
+}
+
+function keypointVector(point, videoWidth, videoHeight, depthScale = 1) {
+  return new THREE.Vector3(
+    (point.x / videoWidth - 0.5) * 2.7,
+    -(point.y / videoHeight - 0.5) * 4.4,
+    -(point.z || 0) * depthScale,
+  )
+}
+
+function vectorAngleDegrees(first, vertex, last) {
+  if (!first || !vertex || !last) return null
+  const firstVector = first.clone().sub(vertex)
+  const lastVector = last.clone().sub(vertex)
+  const denominator = firstVector.length() * lastVector.length()
+  if (!denominator) return null
+  return Math.round(THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(firstVector.dot(lastVector) / denominator, -1, 1))))
+}
+
+function quaternionFromDirection(direction, up = new THREE.Vector3(0, 1, 0)) {
+  const normalized = direction.clone().normalize()
+  return new THREE.Quaternion().setFromUnitVectors(up, normalized)
+}
+
+function calculateJointTelemetry(keypoints, videoWidth, videoHeight) {
+  const names = ['left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_wrist', 'right_wrist']
+  const points = Object.fromEntries(names.map((name) => {
+    const point = pointFor(keypoints, name)
+    return [name, usablePoint(point) && videoWidth && videoHeight ? keypointVector(point, videoWidth, videoHeight) : null]
+  }))
+  return {
+    leftElbow: vectorAngleDegrees(points.left_shoulder, points.left_elbow, points.left_wrist),
+    rightElbow: vectorAngleDegrees(points.right_shoulder, points.right_elbow, points.right_wrist),
+    leftKnee: vectorAngleDegrees(points.left_hip, points.left_knee, points.left_ankle),
+    rightKnee: vectorAngleDegrees(points.right_hip, points.right_knee, points.right_ankle),
+    leftShoulder: vectorAngleDegrees(points.left_hip, points.left_shoulder, points.left_elbow),
+    rightShoulder: vectorAngleDegrees(points.right_hip, points.right_shoulder, points.right_elbow),
+    leftHip: vectorAngleDegrees(points.left_shoulder, points.left_hip, points.left_knee),
+    rightHip: vectorAngleDegrees(points.right_shoulder, points.right_hip, points.right_knee),
+  }
 }
 
 function verifyFullBody(keypoints, width, height) {
@@ -140,6 +184,48 @@ function speakCue(text) {
   window.speechSynthesis.speak(utterance)
 }
 
+function AvatarRig({ keypointsRef, videoRef }) {
+  const jointRefs = useRef({})
+  const boneRefs = useRef([])
+  const smoothed = useRef({})
+  const jointNames = [...new Set(AVATAR_BONES.flat())]
+
+  useFrame(() => {
+    const video = videoRef.current
+    const keypoints = keypointsRef.current
+    if (!video?.videoWidth || !keypoints?.length) return
+    const nextPoints = Object.fromEntries(jointNames.map((name) => {
+      const point = pointFor(keypoints, name)
+      const target = usablePoint(point) ? keypointVector(point, video.videoWidth, video.videoHeight) : smoothed.current[name] || new THREE.Vector3()
+      smoothed.current[name] = smoothed.current[name] || target.clone()
+      smoothed.current[name].lerp(target, 0.22)
+      return [name, smoothed.current[name]]
+    }))
+    jointNames.forEach((name) => { if (jointRefs.current[name]) jointRefs.current[name].position.copy(nextPoints[name]) })
+    AVATAR_BONES.forEach(([from, to], index) => {
+      const bone = boneRefs.current[index]
+      if (!bone) return
+      const start = nextPoints[from]
+      const end = nextPoints[to]
+      const midpoint = start.clone().add(end).multiplyScalar(0.5)
+      const direction = end.clone().sub(start)
+      bone.position.copy(midpoint)
+      bone.scale.set(1, Math.max(0.04, direction.length()), 1)
+      const targetQuaternion = quaternionFromDirection(direction)
+      bone.quaternion.slerp(targetQuaternion, 0.24)
+    })
+  })
+
+  return <group position={[0, 0, 0]}>
+    {AVATAR_BONES.map(([from, to], index) => <mesh key={`${from}-${to}`} ref={(node) => { boneRefs.current[index] = node }}><cylinderGeometry args={[0.045, 0.055, 1, 8]} /><meshStandardMaterial color="#67e8e0" emissive="#1c7f7a" emissiveIntensity={0.55} roughness={0.3} metalness={0.55} /></mesh>)}
+    {jointNames.map((name) => <mesh key={name} ref={(node) => { jointRefs.current[name] = node }}><sphereGeometry args={[name === 'nose' ? 0.09 : 0.075, 12, 12]} /><meshStandardMaterial color="#d6fffb" emissive="#67e8e0" emissiveIntensity={0.7} roughness={0.25} metalness={0.45} /></mesh>)}
+  </group>
+}
+
+function AvatarViewport({ keypointsRef, videoRef }) {
+  return <div className="full-body-avatar"><div className="full-body-avatar-label">LIVE AVATAR / MIRRORED RIG</div><Canvas camera={{ position: [0, 0, 6.4], fov: 38 }} gl={{ alpha: true, antialias: true }}><ambientLight intensity={1.5} /><pointLight position={[2, 2, 3]} intensity={4} color="#67e8e0" /><pointLight position={[-2, -1, 2]} intensity={2} color="#ffbd5c" /><AvatarRig keypointsRef={keypointsRef} videoRef={videoRef} /><OrbitControls enablePan={false} enableZoom={false} rotateSpeed={0.35} /></Canvas><div className="full-body-avatar-meta"><span>SMOOTHING 0.22</span><span>13 JOINTS</span></div></div>
+}
+
 function saveDiagnostic(payload, onDiagnosticComplete) {
   const record = { id: crypto.randomUUID(), type: 'full-body-diagnostic', observedAt: new Date().toISOString(), source: 'tensorflow-movenet', diagnostic: payload.overallScore >= 80 ? 'MOBILITY OPTIMAL' : 'MUSCLE TONE REVIEW', metrics: payload, payload }
   try {
@@ -162,11 +248,13 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const lastCueRef = useRef('')
   const statusRef = useRef('idle')
   const stepIndexRef = useRef(-1)
+  const keypointsRef = useRef([])
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [verification, setVerification] = useState({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
   const [stepIndex, setStepIndex] = useState(-1)
   const [stepAnalysis, setStepAnalysis] = useState(null)
+  const [jointTelemetry, setJointTelemetry] = useState({})
   const [secondsLeft, setSecondsLeft] = useState(null)
   const [result, setResult] = useState(null)
 
@@ -196,7 +284,9 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     if (!video || !detector || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
     const poses = await detector.estimatePoses(video, { flipHorizontal: true })
     const keypoints = poses[0]?.keypoints || []
+    keypointsRef.current = keypoints
     const nextVerification = verifyFullBody(keypoints, video.videoWidth, video.videoHeight)
+    setJointTelemetry(calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight))
     setVerification(nextVerification)
     const currentStatus = statusRef.current
     const currentStepIndex = stepIndexRef.current
@@ -244,11 +334,11 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
 
   return <div className="full-body-layer"><section className="full-body-console" role="dialog" aria-modal="true" aria-label="Full body muscle tone diagnostic">
     <header className="full-body-header"><div><span className="full-body-eyebrow">AURORA MEDICAL // FLEX & HOLD PROTOCOL</span><h2>Full-body diagnostic</h2></div><button className="full-body-close" onClick={() => { stop(); onClose?.() }} aria-label="Close diagnostic">×</button></header>
-    <div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" />{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div></div>
-    <div className="full-body-content"><div className="full-body-protocol"><div className="full-body-protocol-top"><span className="full-body-eyebrow">{status === 'complete' ? 'PROTOCOL COMPLETE' : activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'complete' ? `${result?.overallScore || 0} / 100` : activeStep ? activeStep.title : verification.message}</strong></div>{status === 'complete' ? <div className="full-body-result"><span>PHYSICAL HEALTH & MUSCLE TONE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div> : <><p className="full-body-instruction">{activeStep ? activeStep.instruction : verification.detail}</p><p className="full-body-cue">{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</p><div className="full-body-progress"><span style={{ width: `${progress}%` }} /></div></>}</div><div className="full-body-live-readout"><div><span>POSE CONFIDENCE</span><strong>{verification.ready ? 'LOCKED' : 'SEARCHING'}</strong></div><div><span>LIVE SCORE</span><strong>{stepAnalysis ? `${stepAnalysis.score}%` : '--'}</strong></div><div><span>SYMMETRY</span><strong>{stepAnalysis ? `${stepAnalysis.symmetry}%` : '--'}</strong></div><div><span>TIME REMAINING</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong></div></div></div>
+    <div className="full-body-visual-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" />{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
+    <div className="full-body-content"><div className="full-body-protocol"><div className="full-body-protocol-top"><span className="full-body-eyebrow">{status === 'complete' ? 'PROTOCOL COMPLETE' : activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'complete' ? `${result?.overallScore || 0} / 100` : activeStep ? activeStep.title : verification.message}</strong></div>{status === 'complete' ? <div className="full-body-result"><span>PHYSICAL HEALTH & MUSCLE TONE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div> : <><p className="full-body-instruction">{activeStep ? activeStep.instruction : verification.detail}</p><p className="full-body-cue">{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</p><div className="full-body-progress"><span style={{ width: `${progress}%` }} /></div></>}</div><div className="full-body-live-readout"><div><span>POSE CONFIDENCE</span><strong>{verification.ready ? 'LOCKED' : 'SEARCHING'}</strong></div><div><span>LIVE SCORE</span><strong>{stepAnalysis ? `${stepAnalysis.score}%` : '--'}</strong></div><div><span>SYMMETRY</span><strong>{stepAnalysis ? `${stepAnalysis.symmetry}%` : '--'}</strong></div><div><span>TIME REMAINING</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong></div><div><span>LEFT ELBOW</span><strong>{jointTelemetry.leftElbow ? `${jointTelemetry.leftElbow}°` : '--'}</strong></div><div><span>RIGHT ELBOW</span><strong>{jointTelemetry.rightElbow ? `${jointTelemetry.rightElbow}°` : '--'}</strong></div><div><span>LEFT KNEE</span><strong>{jointTelemetry.leftKnee ? `${jointTelemetry.leftKnee}°` : '--'}</strong></div><div><span>RIGHT KNEE</span><strong>{jointTelemetry.rightKnee ? `${jointTelemetry.rightKnee}°` : '--'}</strong></div></div></div>
     {error && <p className="full-body-error" role="alert">{error}</p>}
     <footer className="full-body-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE FULL-BODY CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <span className="full-body-locked">{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status.toUpperCase()}</span>}<span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
   </section></div>
 }
 
-export { STEPS, angleAtJoint, analyzeStep, verifyFullBody }
+export { STEPS, angleAtJoint, analyzeStep, calculateJointTelemetry, keypointVector, quaternionFromDirection, verifyFullBody }
