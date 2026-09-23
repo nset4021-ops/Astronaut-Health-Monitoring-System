@@ -254,7 +254,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const statusRef = useRef('idle')
   const stepIndexRef = useRef(-1)
   const keypointsRef = useRef([])
-  const facingModeRef = useRef('user')
+  const selectedIndexRef = useRef(0)
+  const streamGenerationRef = useRef(0)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [verification, setVerification] = useState({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
@@ -263,9 +264,12 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const [jointTelemetry, setJointTelemetry] = useState({})
   const [secondsLeft, setSecondsLeft] = useState(null)
   const [result, setResult] = useState(null)
-  const [facingMode, setFacingMode] = useState('user')
+  const [videoDevices, setVideoDevices] = useState([])
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [trackingMessage, setTrackingMessage] = useState('Tracking standby')
 
   const stop = useCallback(() => {
+    streamGenerationRef.current += 1
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
     streamRef.current?.getTracks().forEach((track) => track.stop())
     detectorRef.current?.dispose?.()
@@ -273,7 +277,9 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     if (videoRef.current) videoRef.current.srcObject = null
     calibrationStartRef.current = null; stepStartedRef.current = null
     statusRef.current = 'idle'; stepIndexRef.current = -1
+    keypointsRef.current = []
     setStatus('idle'); setStepIndex(-1); setStepAnalysis(null); setSecondsLeft(null); setVerification({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
+    setTrackingMessage('Tracking standby')
   }, [])
 
   const finish = useCallback(() => {
@@ -285,47 +291,87 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     statusRef.current = 'complete'; setResult(payload); setStatus('complete'); setSecondsLeft(null); speakCue(`Diagnostic complete. Physical health and muscle tone score ${overallScore} out of 100.`)
   }, [onDiagnosticComplete, onSnapshotSaved])
 
-  const requestCamera = useCallback(async (nextFacingMode) => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      ...VIDEO_CONSTRAINTS,
-      video: { ...VIDEO_CONSTRAINTS.video, facingMode: nextFacingMode },
-    })
-    streamRef.current = stream
-    videoRef.current.srcObject = stream
-    await videoRef.current.play()
-    facingModeRef.current = nextFacingMode
-    setFacingMode(nextFacingMode)
-    return stream
+  const enumerateVideoDevices = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return []
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const cameras = devices.filter((device) => device.kind === 'videoinput')
+    setVideoDevices(cameras)
+    return cameras
   }, [])
 
-  const switchCamera = useCallback(async () => {
-    if (!streamRef.current || !navigator.mediaDevices?.getUserMedia) return
-    const previousFacingMode = facingModeRef.current
-    const nextFacingMode = previousFacingMode === 'user' ? 'environment' : 'user'
-    streamRef.current.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    try {
-      await requestCamera(nextFacingMode)
-      setError('')
-    } catch (switchError) {
-      try {
-        await requestCamera(previousFacingMode)
-        setError(`Alternate camera unavailable. Continuing with ${previousFacingMode === 'user' ? 'front' : 'back'} camera.`)
-      } catch {
-        statusRef.current = 'error'
-        setStatus('error')
-        setError(switchError?.message || 'Unable to switch camera. Check camera permissions and device availability.')
+  useEffect(() => {
+    let mounted = true
+    const refreshDevices = async () => {
+      const cameras = await enumerateVideoDevices()
+      if (!mounted || cameras.length === 0) return
+      const activeDeviceId = streamRef.current?.getVideoTracks?.()[0]?.getSettings?.().deviceId
+      const activeIndex = cameras.findIndex((device) => device.deviceId === activeDeviceId)
+      if (activeIndex >= 0) {
+        selectedIndexRef.current = activeIndex
+        setSelectedIndex(activeIndex)
       }
     }
-  }, [requestCamera])
+    refreshDevices()
+    navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices)
+    return () => {
+      mounted = false
+      navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices)
+    }
+  }, [enumerateVideoDevices])
 
-  const trackFrame = useCallback(async (timestamp) => {
+  const waitForVideoReady = useCallback((video) => new Promise((resolve, reject) => {
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+      video.play().then(resolve).catch(reject)
+      return
+    }
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('Camera video did not become ready after switching devices.'))
+    }, 5000)
+    const onMetadata = () => {
+      cleanup()
+      video.play().then(resolve).catch(reject)
+    }
+    const cleanup = () => {
+      window.clearTimeout(timeout)
+      video.removeEventListener('loadedmetadata', onMetadata)
+    }
+    video.addEventListener('loadedmetadata', onMetadata, { once: true })
+  }), [])
+
+  const requestCamera = useCallback(async (deviceId) => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      ...VIDEO_CONSTRAINTS,
+      video: deviceId
+        ? { ...VIDEO_CONSTRAINTS.video, deviceId: { exact: deviceId } }
+        : VIDEO_CONSTRAINTS.video,
+    })
+    streamRef.current = stream
+    const video = videoRef.current
+    video.pause()
+    video.srcObject = stream
+    await waitForVideoReady(video)
+    return stream
+  }, [waitForVideoReady])
+
+  const createDetector = useCallback(async () => {
+    detectorRef.current?.dispose?.()
+    detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, enableSmoothing: true })
+    return detectorRef.current
+  }, [])
+
+  const trackFrame = useCallback(async (timestamp, generation = streamGenerationRef.current) => {
     const video = videoRef.current
     const detector = detectorRef.current
-    if (!video || !detector || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+    if (generation !== streamGenerationRef.current || !video || !detector || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
+      if (generation === streamGenerationRef.current) frameRef.current = requestAnimationFrame((nextTimestamp) => trackFrame(nextTimestamp, generation))
+      return
+    }
     const poses = await detector.estimatePoses(video, { flipHorizontal: true })
+    if (generation !== streamGenerationRef.current || video.srcObject !== streamRef.current) return
     const keypoints = poses[0]?.keypoints || []
     keypointsRef.current = keypoints
+    setTrackingMessage(`Tracking active: ${keypoints.length} keypoints found`)
     const nextVerification = verifyFullBody(keypoints, video.videoWidth, video.videoHeight)
     setJointTelemetry(calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight))
     setVerification(nextVerification)
@@ -352,21 +398,77 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
         else { const nextIndex = currentStepIndex + 1; stepIndexRef.current = nextIndex; setStepIndex(nextIndex); stepStartedRef.current = timestamp; setStepAnalysis(null); speakCue(STEPS[nextIndex].instruction) }
       }
     }
-    frameRef.current = requestAnimationFrame(trackFrame)
+    if (generation === streamGenerationRef.current) frameRef.current = requestAnimationFrame((nextTimestamp) => trackFrame(nextTimestamp, generation))
   }, [finish])
+
+  const startTrackingLoop = useCallback(() => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
+    const generation = streamGenerationRef.current
+    frameRef.current = requestAnimationFrame((timestamp) => trackFrame(timestamp, generation))
+  }, [trackFrame])
+
+  const switchCamera = useCallback(async () => {
+    if (!streamRef.current || !navigator.mediaDevices?.getUserMedia || videoDevices.length <= 1) return
+    const previousIndex = selectedIndexRef.current
+    const nextIndex = (previousIndex + 1) % videoDevices.length
+    const previousDeviceId = videoDevices[previousIndex]?.deviceId
+    const nextDeviceId = videoDevices[nextIndex]?.deviceId
+    const previousStatus = statusRef.current
+    const generation = ++streamGenerationRef.current
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
+    frameRef.current = null
+    keypointsRef.current = []
+    setTrackingMessage('Rebinding pose tracker...')
+    streamRef.current.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    try {
+      await requestCamera(nextDeviceId)
+      if (generation !== streamGenerationRef.current) return
+      await createDetector()
+      selectedIndexRef.current = nextIndex
+      setSelectedIndex(nextIndex)
+      statusRef.current = previousStatus
+      setTrackingMessage('Tracking active: waiting for keypoints')
+      startTrackingLoop()
+      setError('')
+    } catch (switchError) {
+      try {
+        await requestCamera(previousDeviceId)
+        if (generation !== streamGenerationRef.current) return
+        await createDetector()
+        statusRef.current = previousStatus
+        setTrackingMessage('Tracking active: restored previous camera')
+        startTrackingLoop()
+        setError(`Camera ${nextIndex + 1} unavailable. Continuing with camera ${previousIndex + 1}.`)
+      } catch {
+        statusRef.current = 'error'
+        setStatus('error')
+        setError(switchError?.message || 'Unable to switch camera. Check camera permissions and device availability.')
+      }
+    }
+  }, [createDetector, requestCamera, startTrackingLoop, videoDevices])
 
   const start = useCallback(async () => {
     setError('')
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { setError('Camera requires HTTPS or localhost in a supported browser.'); statusRef.current = 'error'; setStatus('error'); return }
     try {
       statusRef.current = 'requesting'; setStatus('requesting')
-      await requestCamera(facingModeRef.current)
+      const cameras = await enumerateVideoDevices()
+      const initialDeviceId = cameras[selectedIndexRef.current]?.deviceId
+      await requestCamera(initialDeviceId)
+      const refreshedCameras = await enumerateVideoDevices()
+      const activeDeviceId = streamRef.current?.getVideoTracks?.()[0]?.getSettings?.().deviceId
+      const activeIndex = refreshedCameras.findIndex((device) => device.deviceId === activeDeviceId)
+      if (activeIndex >= 0) {
+        selectedIndexRef.current = activeIndex
+        setSelectedIndex(activeIndex)
+      }
       statusRef.current = 'loading'; setStatus('loading'); await tf.setBackend('webgl'); await tf.ready()
-      detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, enableSmoothing: true })
-      scoresRef.current = []; statusRef.current = 'calibrating'; setStatus('calibrating'); speakCue('Step back until your full body is visible.')
-      frameRef.current = requestAnimationFrame(trackFrame)
+      await createDetector()
+      scoresRef.current = []; statusRef.current = 'calibrating'; setStatus('calibrating'); setTrackingMessage('Tracking active: waiting for keypoints'); speakCue('Step back until your full body is visible.')
+      startTrackingLoop()
     } catch (caught) { stop(); setError(caught?.message || 'Camera or pose model unavailable.'); statusRef.current = 'error'; setStatus('error') }
-  }, [requestCamera, stop, trackFrame])
+  }, [createDetector, enumerateVideoDevices, requestCamera, startTrackingLoop, stop])
 
   useEffect(() => () => stop(), [stop])
   const activeStep = STEPS[stepIndex]
@@ -374,7 +476,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
 
   return <div className="full-body-layer"><section className="full-body-console" role="dialog" aria-modal="true" aria-label="Full body muscle tone diagnostic">
     <header className="full-body-header"><div><span className="full-body-eyebrow">AURORA MEDICAL // FLEX & HOLD PROTOCOL</span><h2>Full-body diagnostic</h2></div><button className="full-body-close" onClick={() => { stop(); onClose?.() }} aria-label="Close diagnostic">×</button></header>
-    <div className="full-body-visual-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" />{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-camera-controls absolute top-4 right-4 z-50"><button type="button" className="bg-slate-900/80 hover:bg-slate-800 text-cyan-400 border border-cyan-500/30 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg cursor-pointer flex items-center gap-2" onClick={switchCamera} disabled={!streamRef.current || ['requesting', 'loading'].includes(status)} aria-label={`Switch camera. Current camera: ${facingMode === 'user' ? 'Front' : 'Back'}`}><span aria-hidden="true">⇄</span><span>Switch Camera</span><small>{facingMode === 'user' ? 'Front' : 'Back'}</small></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
+    <div className="full-body-visual-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" />{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-tracking-status" role="status">{trackingMessage}</div><div className="full-body-camera-controls absolute top-4 right-4 z-50"><button type="button" className="bg-slate-900/80 hover:bg-slate-800 text-cyan-400 border border-cyan-500/30 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg cursor-pointer flex items-center gap-2" onClick={switchCamera} disabled={!streamRef.current || videoDevices.length <= 1 || ['requesting', 'loading'].includes(status)} aria-label={videoDevices.length <= 1 ? 'Single camera detected' : `Switch to camera ${((selectedIndex + 1) % videoDevices.length) + 1}`}><span aria-hidden="true">⇄</span><span>Switch Camera</span><small>{videoDevices.length <= 1 ? 'Single Camera Detected' : `Camera ${selectedIndex + 1} / ${videoDevices.length}`}</small></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
     <div className="full-body-content"><div className="full-body-protocol"><div className="full-body-protocol-top"><span className="full-body-eyebrow">{status === 'complete' ? 'PROTOCOL COMPLETE' : activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'complete' ? `${result?.overallScore || 0} / 100` : activeStep ? activeStep.title : verification.message}</strong></div>{status === 'complete' ? <div className="full-body-result"><span>PHYSICAL HEALTH & MUSCLE TONE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div> : <><p className="full-body-instruction">{activeStep ? activeStep.instruction : verification.detail}</p><p className="full-body-cue">{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</p><div className="full-body-progress"><span style={{ width: `${progress}%` }} /></div></>}</div><div className="full-body-live-readout"><div><span>POSE CONFIDENCE</span><strong>{verification.ready ? 'LOCKED' : 'SEARCHING'}</strong></div><div><span>LIVE SCORE</span><strong>{stepAnalysis ? `${stepAnalysis.score}%` : '--'}</strong></div><div><span>SYMMETRY</span><strong>{stepAnalysis ? `${stepAnalysis.symmetry}%` : '--'}</strong></div><div><span>TIME REMAINING</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong></div><AngleBar label="LEFT ELBOW" value={jointTelemetry.leftElbow} /><AngleBar label="RIGHT ELBOW" value={jointTelemetry.rightElbow} /><AngleBar label="LEFT KNEE" value={jointTelemetry.leftKnee} /><AngleBar label="RIGHT KNEE" value={jointTelemetry.rightKnee} /><AngleBar label="SHOULDER L" value={jointTelemetry.leftShoulder} /><AngleBar label="SHOULDER R" value={jointTelemetry.rightShoulder} /></div></div>
     {error && <p className="full-body-error" role="alert">{error}</p>}
     <footer className="full-body-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE FULL-BODY CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <span className="full-body-locked">{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status.toUpperCase()}</span>}<span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
