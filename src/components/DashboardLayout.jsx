@@ -54,17 +54,18 @@ function MobilityConsole({ onOpenMobility }) {
   </aside>
 }
 
-function DecisionConsole({ activeAlert, alertCount, onOpenBriefing, onApplyCountermeasure, voice }) {
+function DecisionConsole({ activeAlert, alertCount, onOpenScanner, onOpenBriefing, onApplyCountermeasure, voice }) {
   return <aside className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface command-right command-panel glass-panel`}>
     <PanelHeader index="03" title="Mission watch" status={activeAlert ? `${alertCount} OPEN` : 'ALL CLEAR'} tone={activeAlert ? 'amber' : 'green'} />
     <div className={`watch-banner ${activeAlert ? 'has-alert' : ''}`}><StatusDot tone={activeAlert ? 'amber' : 'green'} /><div><strong>{activeAlert ? activeAlert.title : 'Operating envelope nominal'}</strong><small>{activeAlert ? activeAlert.body : 'No immediate countermeasure required.'}</small></div></div>
     {activeAlert && <button className="command-alert-action" style={{ pointerEvents: 'auto' }} onClick={onApplyCountermeasure}><Sparkles size={14} /> APPLY COUNTERMEASURE <span>↗</span></button>}
     <button className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface briefing-card`} style={{ pointerEvents: 'auto' }} onClick={onOpenBriefing}><div><span className="command-eyebrow">NEXT CREW ACTION</span><strong>Daily recovery briefing</strong><small>Sleep · stress · mission readiness</small></div><Clock3 size={18} /></button>
+    <button className="command-alert-action" style={{ pointerEvents: 'auto' }} onClick={onOpenScanner}><Dna size={14} /> OPEN STRESS & INJURY SCANNER <span>↗</span></button>
     <div className="voice-console"><div><Mic size={14} /><span>VOICE LINK</span></div><strong>{voice?.isListening ? 'LISTENING...' : 'READY FOR COMMAND'}</strong><small>{voice?.transcript || '“Run daily briefing”'}</small></div>
   </aside>
 }
 
-function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, voice, onOpenMobility, onOpenBriefing, onApplyCountermeasure }) {
+function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, voice, onOpenMobility, onOpenScanner, onOpenBriefing, onApplyCountermeasure }) {
   return <Html fullscreen transform={false} style={{ pointerEvents: 'none' }}>
     <div className="command-center-shell">
       <header className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface command-topbar command-panel glass-panel`}>
@@ -81,7 +82,7 @@ function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, 
         <div className="glass-metric-grid">{healthMetrics.map((metric) => <GlassMetric key={metric.label} metric={metric} />)}</div>
         <div className="core-score-strip"><div><span>MISSION HEALTH CORE</span><strong>{healthScore}%</strong></div><div><span>LOCAL OUTBOX</span><strong>{queueLength}</strong></div><div><span>OPEN ASSESSMENTS</span><strong className={alertCount ? 'tone-amber' : 'tone-green'}>{alertCount}</strong></div><div><span>MODEL CONFIDENCE</span><strong>94%</strong></div></div>
       </section>
-      <DecisionConsole activeAlert={activeAlert} alertCount={alertCount} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} voice={voice} />
+      <DecisionConsole activeAlert={activeAlert} alertCount={alertCount} onOpenScanner={onOpenScanner} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} voice={voice} />
 
       <nav className="command-tabs" aria-label="Dashboard modules">{moduleTabs.map((tab, index) => <button key={tab.label} className={index === 0 ? 'is-active' : ''} style={{ pointerEvents: 'auto' }} onClick={index === 1 ? onOpenMobility : index === 3 ? onOpenBriefing : undefined}><CheckCircle2 size={13} /><span>{tab.label}</span><small>{tab.detail}</small></button>)}</nav>
       <div className="command-footnote">OFFLINE-FIRST · ENCRYPTED LOCAL STORE · CLINICAL DECISION SUPPORT, NOT A DIAGNOSIS <span>◈</span> ALL TELEMETRY LOCAL TO HAB-01</div>
@@ -89,6 +90,6 @@ function CommandCenterGrid({ healthScore, alertCount, queueLength, activeAlert, 
   </Html>
 }
 
-export default function DashboardLayout({ healthScore, alertCount, queueLength, activeAlert, voice, onSelectMetric, onOpenMobility, onOpenBriefing, onApplyCountermeasure }) {
-  return <group><MissionHealthCore healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} onSelect={onSelectMetric} showReadout={false} /><CommandCenterGrid healthScore={healthScore} alertCount={alertCount} queueLength={queueLength} activeAlert={activeAlert} voice={voice} onOpenMobility={onOpenMobility} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} /></group>
+export default function DashboardLayout({ healthScore, alertCount, queueLength, activeAlert, voice, onSelectMetric, onOpenMobility, onOpenScanner, onOpenBriefing, onApplyCountermeasure }) {
+  return <group><MissionHealthCore healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} onSelect={onSelectMetric} showReadout={false} /><CommandCenterGrid healthScore={healthScore} alertCount={alertCount} queueLength={queueLength} activeAlert={activeAlert} voice={voice} onOpenMobility={onOpenMobility} onOpenScanner={onOpenScanner} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} /></group>
 }

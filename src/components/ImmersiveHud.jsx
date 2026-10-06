@@ -1,5 +1,7 @@
 import { Camera, Check, Crosshair, Hand, Mic, Rotate3D, WifiOff, X } from 'lucide-react'
-import FullBodyDiagnostic from './FullBodyDiagnostic'
+import { lazy, Suspense } from 'react'
+
+const FullBodyDiagnostic = lazy(() => import('./FullBodyDiagnostic'))
 
 function Readout({ label, value, tone = 'cyan' }) {
   return <div className="readout"><span>{label}</span><strong className={`tone-${tone}`}>{value}</strong></div>
@@ -21,7 +23,7 @@ export function ImmersiveHud({ state, activeAlerts, onTrigger, onOpenMobility, o
 }
 
 export function CameraRig({ onClose, onSaved }) {
-  return <FullBodyDiagnostic onClose={onClose} onDiagnosticComplete={onSaved} />
+  return <Suspense fallback={<div className="full-body-layer"><section className="full-body-console" role="status" aria-live="polite"><span className="full-body-eyebrow">AURORA MEDICAL // POSE ENGINE</span><h2>Loading mobility diagnostic...</h2></section></div>}><FullBodyDiagnostic onClose={onClose} onDiagnosticComplete={onSaved} /></Suspense>
 }
 
 export function PoseDiagnostics({ activeAlerts }) {

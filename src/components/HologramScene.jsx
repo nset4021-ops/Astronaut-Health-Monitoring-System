@@ -107,7 +107,7 @@ function CockpitDeck() {
   </group>
 }
 
-function CockpitScene({ selectedMetric, onSelectMetric, onOpenMobility, onOpenBriefing, activeAlert, onAcknowledge, healthScore, queueLength, alertCount, voice, onApplyCountermeasure }) {
+function CockpitScene({ selectedMetric, onSelectMetric, onOpenMobility, onOpenScanner, onOpenBriefing, activeAlert, onAcknowledge, healthScore, queueLength, alertCount, voice, onApplyCountermeasure }) {
   const [selectedInstrument, setSelectedInstrument] = useState(selectedMetric)
   const dashboard = useRef()
   useFrame((state, delta) => {
@@ -127,7 +127,7 @@ function CockpitScene({ selectedMetric, onSelectMetric, onOpenMobility, onOpenBr
       <PulseOximeter selected={selectedInstrument === 'cardio'} onSelect={selectInstrument} />
       <Dosimeter selected={selectedInstrument === 'radiation'} onSelect={selectInstrument} />
       <MobilityBezel onOpen={onOpenMobility} />
-      <DashboardLayout healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} activeAlert={activeAlert} voice={voice} onSelectMetric={selectInstrument} onOpenMobility={onOpenMobility} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} />
+      <DashboardLayout healthScore={healthScore} queueLength={queueLength} alertCount={alertCount} activeAlert={activeAlert} voice={voice} onSelectMetric={selectInstrument} onOpenMobility={onOpenMobility} onOpenScanner={onOpenScanner} onOpenBriefing={onOpenBriefing} onApplyCountermeasure={onApplyCountermeasure} />
     </group>
     <ContactShadows position={[0, -2.92, 0]} opacity={0.55} scale={9} blur={2.4} far={4.5} />
     <OrbitControls makeDefault enableZoom enablePan rotateSpeed={0.35} minDistance={5.5} maxDistance={10} target={[0, 0, 0]} />

@@ -41,3 +41,60 @@
 .command-center-shell .liquid-glass-surface { background: rgba(15, 23, 42, .4); backdrop-filter: blur(32px); border: 1px solid rgba(255, 255, 255, .15); border-radius: 1rem; box-shadow: 0 8px 32px rgba(0, 255, 255, .1); overflow: hidden; position: relative; }
 .command-center-shell .liquid-glass-surface::before { background: linear-gradient(to bottom, rgba(255, 255, 255, .1), transparent); content: ''; inset: 0; pointer-events: none; position: absolute; z-index: 0; }
 .command-center-shell .liquid-glass-surface > * { position: relative; z-index: 1; }
+
+/* Fixed cockpit matrix: the document stays static; dense panels own their overflow. */
+.command-center-shell {
+  display: grid;
+  gap: 10px;
+  grid-template-areas:
+    'top top top top top top top top top top top top'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'left left left center center center center center right right right right'
+    'tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs'
+    'foot foot foot foot foot foot foot foot foot foot foot foot';
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: minmax(50px, 1.1fr) repeat(9, minmax(0, 1fr)) minmax(32px, .7fr) minmax(14px, .35fr);
+  height: 100%;
+  max-height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 16px 8px;
+  width: 100vw;
+}
+.command-topbar, .command-left, .command-center, .command-right, .command-tabs { min-height: 0; }
+.command-topbar { padding: 9px 14px; }
+.command-left, .command-center, .command-right { padding: 11px; }
+.command-center { display: flex; flex-direction: column; overflow: hidden; }
+.command-right { overflow-y: auto; }
+.command-panel-header { margin-bottom: 9px; padding-bottom: 8px; }
+.command-panel-header h2 { font-size: 13px; margin-top: 3px; }
+.glass-metric-grid { flex: 1; gap: 6px; grid-template-rows: repeat(2, minmax(0, 1fr)); min-height: 0; overflow-y: auto; }
+.glass-metric { padding: 8px; }
+.glass-metric-value { margin: 9px 0 6px; }
+.glass-metric-value strong { font-size: 20px; }
+.glass-metric p { font-size: 7px; margin-top: 6px; }
+.core-score-strip { flex-shrink: 0; margin-top: 8px; }
+
+@media (max-width: 1120px) {
+  .command-center-shell {
+    grid-template-areas: 'top top top top top top top top top top top top' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'left left left left center center center center right right right right' 'tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs' 'foot foot foot foot foot foot foot foot foot foot foot foot';
+    grid-template-rows: minmax(48px, 1fr) repeat(9, minmax(0, 1fr)) minmax(30px, .7fr) minmax(14px, .35fr);
+    overflow: hidden;
+    padding: 8px 10px 6px;
+  }
+  .command-mission { display: none; }
+}
+@media (max-width: 680px) {
+  .command-center-shell { gap: 6px; grid-template-areas: 'top top top top top top top top top top top top' 'left left left left left left right right right right right right' 'left left left left left left right right right right right right' 'center center center center center center center center center center center center' 'center center center center center center center center center center center center' 'center center center center center center center center center center center center' 'center center center center center center center center center center center center' 'center center center center center center center center center center center center' 'center center center center center center center center center center center center' 'center center center center center center center center center center center center' 'tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs tabs' 'foot foot foot foot foot foot foot foot foot foot foot foot'; grid-template-rows: minmax(42px, .8fr) repeat(2, minmax(0, 1fr)) repeat(7, minmax(0, .8fr)) minmax(28px, .6fr) minmax(12px, .3fr); overflow: hidden; padding: 6px; }
+  .command-left, .command-center, .command-right { padding: 8px; }
+  .command-tabs button { padding: 6px 7px; }
+  .command-tabs small { display: none; }
+  .glass-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
