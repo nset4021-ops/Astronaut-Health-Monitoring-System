@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import './full-body-diagnostic.css'
 
 const VIDEO_CONSTRAINTS = {
-  video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+  video: { width: { ideal: 640, max: 640 }, height: { ideal: 480, max: 480 }, frameRate: { ideal: 30, max: 30 } },
   audio: false,
 }
 
@@ -22,6 +22,8 @@ const SKELETON = [
 const CONFIDENCE_THRESHOLD = 0.42
 const CALIBRATION_HOLD_MS = 1500
 const STEP_DURATION_MS = 8000
+const TELEMETRY_PUBLISH_INTERVAL_MS = 100
+const TRACKING_STATUS_INTERVAL_MS = 500
 const STORAGE_KEY = 'orbital-full-body-diagnostic-v1'
 const AVATAR_BONES = SKELETON
 
@@ -271,6 +273,9 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const statusRef = useRef('idle')
   const stepIndexRef = useRef(-1)
   const keypointsRef = useRef([])
+  const verificationRef = useRef({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
+  const lastTelemetryPublishRef = useRef(0)
+  const lastTrackingStatusRef = useRef(0)
   const selectedIndexRef = useRef(0)
   const streamGenerationRef = useRef(0)
   const [status, setStatus] = useState('idle')
@@ -295,6 +300,9 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     calibrationStartRef.current = null; stepStartedRef.current = null
     statusRef.current = 'idle'; stepIndexRef.current = -1
     keypointsRef.current = []
+    verificationRef.current = { ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' }
+    lastTelemetryPublishRef.current = 0
+    lastTrackingStatusRef.current = 0
     setStatus('idle'); setStepIndex(-1); setStepAnalysis(null); setSecondsLeft(null); setVerification({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
     setTrackingMessage('Tracking standby')
   }, [])
@@ -373,7 +381,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
 
   const createDetector = useCallback(async () => {
     detectorRef.current?.dispose?.()
-    detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, enableSmoothing: true })
+    // SINGLEPOSE_LIGHTNING is MoveNet's lite model and is optimized for fast single-person tracking.
+    detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, inputResolution: { width: 256, height: 256 }, enableSmoothing: true })
     return detectorRef.current
   }, [])
 
@@ -388,10 +397,18 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     if (generation !== streamGenerationRef.current || video.srcObject !== streamRef.current) return
     const keypoints = poses[0]?.keypoints || []
     keypointsRef.current = keypoints
-    setTrackingMessage(`Tracking active: ${keypoints.length} keypoints found`)
     const nextVerification = verifyFullBody(keypoints, video.videoWidth, video.videoHeight)
-    setJointTelemetry(calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight))
-    setVerification(nextVerification)
+    verificationRef.current = nextVerification
+    const shouldPublishTelemetry = timestamp - lastTelemetryPublishRef.current >= TELEMETRY_PUBLISH_INTERVAL_MS
+    if (shouldPublishTelemetry) {
+      lastTelemetryPublishRef.current = timestamp
+      setJointTelemetry(calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight))
+      setVerification(nextVerification)
+    }
+    if (timestamp - lastTrackingStatusRef.current >= TRACKING_STATUS_INTERVAL_MS) {
+      lastTrackingStatusRef.current = timestamp
+      setTrackingMessage(`Tracking active: ${keypoints.length} keypoints found`)
+    }
     const currentStatus = statusRef.current
     const currentStepIndex = stepIndexRef.current
     const activeStep = STEPS[currentStepIndex]
@@ -406,8 +423,10 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
 
     if (currentStatus === 'active' && activeStep && nextVerification.ready) {
       const nextAnalysis = analyzeStep(activeStep.id, keypoints)
-      setStepAnalysis(nextAnalysis)
-      setSecondsLeft(Math.max(0, Math.ceil((STEP_DURATION_MS - (timestamp - stepStartedRef.current)) / 1000)))
+      if (shouldPublishTelemetry) {
+        setStepAnalysis(nextAnalysis)
+        setSecondsLeft(Math.max(0, Math.ceil((STEP_DURATION_MS - (timestamp - stepStartedRef.current)) / 1000)))
+      }
       if (nextAnalysis.cue !== lastCueRef.current && nextAnalysis.cue !== 'Hold position') { lastCueRef.current = nextAnalysis.cue; speakCue(nextAnalysis.cue) }
       if (timestamp - stepStartedRef.current >= STEP_DURATION_MS) {
         scoresRef.current = [...scoresRef.current, { id: activeStep.id, score: nextAnalysis.score, symmetry: nextAnalysis.symmetry }]
@@ -469,6 +488,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     setError('')
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { setError('Camera requires HTTPS or localhost in a supported browser.'); statusRef.current = 'error'; setStatus('error'); return }
     try {
+      // Warm WebGL before camera/model work so the first inference avoids CPU fallback.
+      await tf.setBackend('webgl'); await tf.ready()
       statusRef.current = 'requesting'; setStatus('requesting')
       const cameras = await enumerateVideoDevices()
       const initialDeviceId = cameras[selectedIndexRef.current]?.deviceId
@@ -480,7 +501,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
         selectedIndexRef.current = activeIndex
         setSelectedIndex(activeIndex)
       }
-      statusRef.current = 'loading'; setStatus('loading'); await tf.setBackend('webgl'); await tf.ready()
+      statusRef.current = 'loading'; setStatus('loading')
       await createDetector()
       scoresRef.current = []; statusRef.current = 'calibrating'; setStatus('calibrating'); setTrackingMessage('Tracking active: waiting for keypoints'); speakCue('Step back until your full body is visible.')
       startTrackingLoop()
