@@ -266,6 +266,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const detectorRef = useRef(null)
   const streamRef = useRef(null)
   const frameRef = useRef(null)
+  const isDetectingRef = useRef(false)
   const calibrationStartRef = useRef(null)
   const stepStartedRef = useRef(null)
   const scoresRef = useRef([])
@@ -289,10 +290,14 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const [videoDevices, setVideoDevices] = useState([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [trackingMessage, setTrackingMessage] = useState('Tracking standby')
+  const [detectorReady, setDetectorReady] = useState(false)
+  const [videoReady, setVideoReady] = useState(false)
+  const [keypointCount, setKeypointCount] = useState(0)
 
   const stop = useCallback(() => {
     streamGenerationRef.current += 1
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
+    isDetectingRef.current = false
     streamRef.current?.getTracks().forEach((track) => track.stop())
     detectorRef.current?.dispose?.()
     frameRef.current = null; streamRef.current = null; detectorRef.current = null
@@ -300,6 +305,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     calibrationStartRef.current = null; stepStartedRef.current = null
     statusRef.current = 'idle'; stepIndexRef.current = -1
     keypointsRef.current = []
+    setDetectorReady(false); setVideoReady(false); setKeypointCount(0)
     verificationRef.current = { ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' }
     lastTelemetryPublishRef.current = 0
     lastTrackingStatusRef.current = 0
@@ -346,7 +352,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
 
   const waitForVideoReady = useCallback((video) => new Promise((resolve, reject) => {
     if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-      video.play().then(resolve).catch(reject)
+      video.play().then(() => { setVideoReady(video.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA); resolve() }).catch(reject)
       return
     }
     const timeout = window.setTimeout(() => {
@@ -355,7 +361,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     }, 5000)
     const onMetadata = () => {
       cleanup()
-      video.play().then(resolve).catch(reject)
+      video.play().then(() => { setVideoReady(video.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA); resolve() }).catch(reject)
     }
     const cleanup = () => {
       window.clearTimeout(timeout)
@@ -363,6 +369,16 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     }
     video.addEventListener('loadedmetadata', onMetadata, { once: true })
   }), [])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return undefined
+    const onLoadedMetadata = () => {
+      video.play().then(() => setVideoReady(video.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA)).catch((playError) => setError(`Video playback blocked: ${playError.message}`))
+    }
+    video.addEventListener('loadedmetadata', onLoadedMetadata)
+    return () => video.removeEventListener('loadedmetadata', onLoadedMetadata)
+  }, [])
 
   const requestCamera = useCallback(async (deviceId) => {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -383,17 +399,30 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     detectorRef.current?.dispose?.()
     // SINGLEPOSE_LIGHTNING is MoveNet's lite model and is optimized for fast single-person tracking.
     detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, inputResolution: { width: 256, height: 256 }, enableSmoothing: true })
+    setDetectorReady(true)
     return detectorRef.current
   }, [])
 
   const trackFrame = useCallback(async (timestamp, generation = streamGenerationRef.current) => {
     const video = videoRef.current
     const detector = detectorRef.current
-    if (generation !== streamGenerationRef.current || !video || !detector || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
+    if (generation !== streamGenerationRef.current || !video || !detector || video.readyState !== HTMLMediaElement.HAVE_ENOUGH_DATA || video.paused || video.ended || video.videoWidth === 0) {
       if (generation === streamGenerationRef.current) frameRef.current = requestAnimationFrame((nextTimestamp) => trackFrame(nextTimestamp, generation))
       return
     }
-    const poses = await detector.estimatePoses(video, { flipHorizontal: true })
+    if (isDetectingRef.current) {
+      frameRef.current = requestAnimationFrame((nextTimestamp) => trackFrame(nextTimestamp, generation))
+      return
+    }
+    isDetectingRef.current = true
+    let poses = []
+    try {
+      poses = await detector.estimatePoses(video, { flipHorizontal: true })
+    } catch (detectionError) {
+      console.error('Pose detection error:', detectionError)
+    } finally {
+      isDetectingRef.current = false
+    }
     if (generation !== streamGenerationRef.current || video.srcObject !== streamRef.current) return
     const keypoints = poses[0]?.keypoints || []
     keypointsRef.current = keypoints
@@ -402,6 +431,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     const shouldPublishTelemetry = timestamp - lastTelemetryPublishRef.current >= TELEMETRY_PUBLISH_INTERVAL_MS
     if (shouldPublishTelemetry) {
       lastTelemetryPublishRef.current = timestamp
+      setKeypointCount(keypoints.length)
       setJointTelemetry(calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight))
       setVerification(nextVerification)
     }
@@ -520,7 +550,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   return <div className="full-body-layer"><section className="full-body-console" role="dialog" aria-modal="true" aria-label="Full body muscle tone diagnostic">
     <header className="full-body-header"><div><span className="full-body-eyebrow">AURORA MEDICAL // FLEX & HOLD PROTOCOL</span><h2>Mobility command station</h2></div><div className="full-body-header-status"><span>{status === 'active' ? 'LIVE POSE LINK' : status.toUpperCase()}</span><button className="full-body-close" onClick={() => { stop(); onClose?.() }} aria-label="Close diagnostic">×</button></div></header>
     <div className="mobility-workspace">
-      <div className="mobility-portal-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" /><div className="full-body-feed-instructions" aria-live="polite"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{activeStep ? activeStep.instruction : verification.detail}</strong><small>{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</small></div>{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-tracking-status" role="status">{trackingMessage}</div><div className="full-body-camera-controls"><button type="button" onClick={switchCamera} disabled={!streamRef.current || videoDevices.length <= 1 || ['requesting', 'loading'].includes(status)} aria-label="Switch camera"><span aria-hidden="true">⇄</span><span>CAMERA {selectedIndex + 1} / {Math.max(1, videoDevices.length)}</span></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
+      <div className="mobility-portal-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" /><div className="full-body-feed-instructions" aria-live="polite"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{activeStep ? activeStep.instruction : verification.detail}</strong><small>{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</small></div>{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-tracking-status" role="status">{trackingMessage}</div><div className="full-body-debug-banner" role="status" aria-live="polite"><span>DETECTOR LOADED: {detectorReady ? 'TRUE' : 'FALSE'}</span><span>VIDEO READY: {videoReady ? 'TRUE' : 'FALSE'}</span><span>KEYPOINTS: {keypointCount}</span></div><div className="full-body-camera-controls"><button type="button" onClick={switchCamera} disabled={!streamRef.current || videoDevices.length <= 1 || ['requesting', 'loading'].includes(status)} aria-label="Switch camera"><span aria-hidden="true">⇄</span><span>CAMERA {selectedIndex + 1} / {Math.max(1, videoDevices.length)}</span></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
       <aside className="mobility-telemetry-panel"><div className="telemetry-panel-heading"><div><span className="full-body-eyebrow">LIVE ANGLE TELEMETRY</span><h3>{activeStep ? activeStep.title : 'Awaiting pose lock'}</h3></div><span className={`telemetry-status-pill is-${verification.ready ? 'optimal' : 'warning'}`}>{verification.ready ? 'OPTIMAL' : 'ALIGN'}</span></div><div className="telemetry-score-row"><RadialScore label="SCORE" value={stepAnalysis?.score} /><RadialScore label="SYMMETRY" value={stepAnalysis?.symmetry} /><div className="telemetry-countdown"><span>TIME LEFT</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong><small>{verification.ready ? 'POSE LOCKED' : 'SEARCHING'}</small></div></div><div className="telemetry-gauge-stack"><CompactAngleGauge label="LEFT SHOULDER" value={jointTelemetry.leftShoulder} target={[80, 120]} /><CompactAngleGauge label="RIGHT SHOULDER" value={jointTelemetry.rightShoulder} target={[80, 120]} /><CompactAngleGauge label="LEFT ELBOW" value={jointTelemetry.leftElbow} target={[70, 145]} /><CompactAngleGauge label="RIGHT ELBOW" value={jointTelemetry.rightElbow} target={[70, 145]} /><CompactAngleGauge label="LEFT HIP" value={jointTelemetry.leftHip} target={[70, 150]} /><CompactAngleGauge label="RIGHT HIP" value={jointTelemetry.rightHip} target={[70, 150]} /><CompactAngleGauge label="LEFT KNEE" value={jointTelemetry.leftKnee} target={[70, 155]} /><CompactAngleGauge label="RIGHT KNEE" value={jointTelemetry.rightKnee} target={[70, 155]} /></div>{status === 'complete' && <div className="telemetry-result"><span>PROTOCOL COMPLETE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div>}{error && <p className="full-body-error" role="alert">{error}</p>}</aside>
     </div>
     <footer className="mobility-control-dock"><div className="dock-readout"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status === 'idle' ? 'SYSTEM STANDBY' : status.toUpperCase()}</strong></div><div className="dock-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <button className="dock-secondary" onClick={stop}>STOP TRACKING</button>}<button className="dock-secondary" onClick={saveCurrentResult} disabled={!result}>SAVE RESULT</button><button className="dock-secondary" onClick={() => { stop(); onClose?.() }}>CLOSE</button></div><span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
