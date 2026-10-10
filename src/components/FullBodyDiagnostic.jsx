@@ -6,6 +6,7 @@ import { OrbitControls } from '@react-three/drei'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './full-body-diagnostic.css'
+import { MUSCLE_GROUPS, calculateOmnidirectionalTelemetry, updateMuscleHeatmapMaterial } from '../lib/biomechanics'
 
 const VIDEO_CONSTRAINTS = {
   video: { width: { ideal: 640, max: 640 }, height: { ideal: 480, max: 480 }, frameRate: { ideal: 30, max: 30 } },
@@ -73,22 +74,9 @@ function quaternionFromDirection(direction, up = new THREE.Vector3(0, 1, 0)) {
   return new THREE.Quaternion().setFromUnitVectors(up, normalized)
 }
 
-function calculateJointTelemetry(keypoints, videoWidth, videoHeight) {
-  const names = ['left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_wrist', 'right_wrist']
-  const points = Object.fromEntries(names.map((name) => {
-    const point = pointFor(keypoints, name)
-    return [name, usablePoint(point) && videoWidth && videoHeight ? keypointVector(point, videoWidth, videoHeight) : null]
-  }))
-  return {
-    leftElbow: vectorAngleDegrees(points.left_shoulder, points.left_elbow, points.left_wrist),
-    rightElbow: vectorAngleDegrees(points.right_shoulder, points.right_elbow, points.right_wrist),
-    leftKnee: vectorAngleDegrees(points.left_hip, points.left_knee, points.left_ankle),
-    rightKnee: vectorAngleDegrees(points.right_hip, points.right_knee, points.right_ankle),
-    leftShoulder: vectorAngleDegrees(points.left_hip, points.left_shoulder, points.left_elbow),
-    rightShoulder: vectorAngleDegrees(points.right_hip, points.right_shoulder, points.right_elbow),
-    leftHip: vectorAngleDegrees(points.left_shoulder, points.left_hip, points.left_knee),
-    rightHip: vectorAngleDegrees(points.right_shoulder, points.right_hip, points.right_knee),
-  }
+function calculateJointTelemetry(keypoints, videoWidth, videoHeight, previousFrame, timestamp) {
+  const telemetry = calculateOmnidirectionalTelemetry(keypoints, videoWidth, videoHeight, previousFrame, timestamp)
+  return { ...telemetry.jointAngles, ...telemetry }
 }
 
 function verifyFullBody(keypoints, width, height) {
@@ -186,9 +174,10 @@ function speakCue(text) {
   window.speechSynthesis.speak(utterance)
 }
 
-function AvatarRig({ keypointsRef, videoRef }) {
+function AvatarRig({ keypointsRef, videoRef, biomechanicsRef }) {
   const jointRefs = useRef({})
   const boneRefs = useRef([])
+  const boneMaterials = useRef([])
   const smoothed = useRef({})
   const jointNames = [...new Set(AVATAR_BONES.flat())]
 
@@ -215,17 +204,32 @@ function AvatarRig({ keypointsRef, videoRef }) {
       bone.scale.set(1, Math.max(0.04, direction.length()), 1)
       const targetQuaternion = quaternionFromDirection(direction)
       bone.quaternion.slerp(targetQuaternion, 0.24)
+      const activation = biomechanicsRef.current?.activation || {}
+      const muscleId = from.includes('shoulder') && to.includes('elbow')
+        ? 'deltoids'
+        : from.includes('elbow') && to.includes('wrist') ? 'biceps'
+          : from.includes('shoulder') && to.includes('hip') ? 'trapezius'
+            : from.includes('hip') && to.includes('knee') ? 'quadriceps'
+              : from.includes('knee') && to.includes('ankle') ? 'calves'
+                : from.includes('hip') && to.includes('hip') ? 'core' : 'core'
+      updateMuscleHeatmapMaterial(boneMaterials.current[index], activation[muscleId] || 0)
     })
   })
 
   return <group position={[0, 0, 0]}>
-    {AVATAR_BONES.map(([from, to], index) => <mesh key={`${from}-${to}`} ref={(node) => { boneRefs.current[index] = node }}><cylinderGeometry args={[0.045, 0.055, 1, 8]} /><meshStandardMaterial color="#67e8e0" emissive="#1c7f7a" emissiveIntensity={0.55} roughness={0.3} metalness={0.55} /></mesh>)}
+    {AVATAR_BONES.map(([from, to], index) => <mesh key={`${from}-${to}`} ref={(node) => { boneRefs.current[index] = node }}><cylinderGeometry args={[0.045, 0.055, 1, 8]} /><meshStandardMaterial ref={(node) => { boneMaterials.current[index] = node }} color="#1454a0" emissive="#1454a0" emissiveIntensity={0.25} roughness={0.3} metalness={0.55} /></mesh>)}
     {jointNames.map((name) => <mesh key={name} ref={(node) => { jointRefs.current[name] = node }}><sphereGeometry args={[name === 'nose' ? 0.09 : 0.075, 12, 12]} /><meshStandardMaterial color="#d6fffb" emissive="#67e8e0" emissiveIntensity={0.7} roughness={0.25} metalness={0.45} /></mesh>)}
   </group>
 }
 
-function AvatarViewport({ keypointsRef, videoRef }) {
-  return <div className="full-body-avatar"><div className="full-body-avatar-label">LIVE AVATAR / MIRRORED RIG</div><Canvas camera={{ position: [0, 0, 6.4], fov: 38 }} gl={{ alpha: true, antialias: true }}><ambientLight intensity={1.5} /><pointLight position={[2, 2, 3]} intensity={4} color="#67e8e0" /><pointLight position={[-2, -1, 2]} intensity={2} color="#ffbd5c" /><AvatarRig keypointsRef={keypointsRef} videoRef={videoRef} /><OrbitControls enablePan={false} enableZoom={false} rotateSpeed={0.35} /></Canvas><div className="full-body-avatar-meta"><span>SMOOTHING 0.22</span><span>13 JOINTS</span></div></div>
+function AvatarViewport({ keypointsRef, videoRef, biomechanicsRef }) {
+  return <div className="full-body-avatar"><div className="full-body-avatar-label">LIVE AVATAR / HEATMAP RIG</div><Canvas camera={{ position: [0, 0, 6.4], fov: 38 }} gl={{ alpha: true, antialias: true }}><ambientLight intensity={1.5} /><pointLight position={[2, 2, 3]} intensity={4} color="#67e8e0" /><pointLight position={[-2, -1, 2]} intensity={2} color="#ffbd5c" /><AvatarRig keypointsRef={keypointsRef} videoRef={videoRef} biomechanicsRef={biomechanicsRef} /><OrbitControls enablePan={false} enableZoom={false} rotateSpeed={0.35} /></Canvas><div className="full-body-avatar-meta"><span>BLUE REST / AMBER LOAD</span><span>360° VECTOR RIG</span></div></div>
+}
+
+function MuscleBar({ muscle, value }) {
+  const engagement = value || 0
+  const tone = engagement >= 75 ? 'high' : engagement >= 45 ? 'active' : 'rest'
+  return <div className="muscle-bar"><div><span>{muscle.label}</span><strong>{engagement}%</strong></div><i><b className={`is-${tone}`} style={{ width: `${engagement}%` }} /></i></div>
 }
 
 function AngleBar({ label, value, baseline = 180 }) {
@@ -274,6 +278,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const statusRef = useRef('idle')
   const stepIndexRef = useRef(-1)
   const keypointsRef = useRef([])
+  const biomechanicsRef = useRef(null)
+  const previousBiomechanicsRef = useRef(null)
   const verificationRef = useRef({ ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' })
   const lastTelemetryPublishRef = useRef(0)
   const lastTrackingStatusRef = useRef(0)
@@ -305,6 +311,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     calibrationStartRef.current = null; stepStartedRef.current = null
     statusRef.current = 'idle'; stepIndexRef.current = -1
     keypointsRef.current = []
+    biomechanicsRef.current = null
+    previousBiomechanicsRef.current = null
     setDetectorReady(false); setVideoReady(false); setKeypointCount(0)
     verificationRef.current = { ready: false, message: 'Start camera to verify full body', detail: 'Head-to-toe visibility is required.' }
     lastTelemetryPublishRef.current = 0
@@ -316,7 +324,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const finish = useCallback(() => {
     const stepScores = scoresRef.current
     const overallScore = Math.round(stepScores.reduce((sum, item) => sum + item.score, 0) / Math.max(1, stepScores.length))
-    const payload = { overallScore, stepScores, protocol: STEPS.map(({ id, title }) => ({ id, title })), diagnostic: overallScore >= 80 ? 'MUSCLE TONE NOMINAL' : overallScore >= 60 ? 'ADAPTATION MONITOR' : 'REVIEW REQUIRED' }
+    const payload = { overallScore, stepScores, protocol: STEPS.map(({ id, title }) => ({ id, title })), diagnostic: overallScore >= 80 ? 'MUSCLE TONE NOMINAL' : overallScore >= 60 ? 'ADAPTATION MONITOR' : 'REVIEW REQUIRED', muscleActivation: biomechanicsRef.current?.activation || {}, rom: biomechanicsRef.current?.rom || {} }
     const record = saveDiagnostic(payload, onDiagnosticComplete)
     onSnapshotSaved?.(record)
     statusRef.current = 'complete'; setResult(payload); setStatus('complete'); setSecondsLeft(null); speakCue(`Diagnostic complete. Physical health and muscle tone score ${overallScore} out of 100.`)
@@ -432,7 +440,10 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     if (shouldPublishTelemetry) {
       lastTelemetryPublishRef.current = timestamp
       setKeypointCount(keypoints.length)
-      setJointTelemetry(calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight))
+      const nextBiomechanics = calculateJointTelemetry(keypoints, video.videoWidth, video.videoHeight, previousBiomechanicsRef.current, timestamp)
+      previousBiomechanicsRef.current = nextBiomechanics
+      biomechanicsRef.current = nextBiomechanics
+      setJointTelemetry(nextBiomechanics)
       setVerification(nextVerification)
     }
     if (timestamp - lastTrackingStatusRef.current >= TRACKING_STATUS_INTERVAL_MS) {
@@ -550,8 +561,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   return <div className="full-body-layer"><section className="full-body-console" role="dialog" aria-modal="true" aria-label="Full body muscle tone diagnostic">
     <header className="full-body-header"><div><span className="full-body-eyebrow">AURORA MEDICAL // FLEX & HOLD PROTOCOL</span><h2>Mobility command station</h2></div><div className="full-body-header-status"><span>{status === 'active' ? 'LIVE POSE LINK' : status.toUpperCase()}</span><button className="full-body-close" onClick={() => { stop(); onClose?.() }} aria-label="Close diagnostic">×</button></div></header>
     <div className="mobility-workspace">
-      <div className="mobility-portal-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" /><div className="full-body-feed-instructions" aria-live="polite"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{activeStep ? activeStep.instruction : verification.detail}</strong><small>{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</small></div>{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-tracking-status" role="status">{trackingMessage}</div><div className="full-body-debug-banner" role="status" aria-live="polite"><span>DETECTOR LOADED: {detectorReady ? 'TRUE' : 'FALSE'}</span><span>VIDEO READY: {videoReady ? 'TRUE' : 'FALSE'}</span><span>KEYPOINTS: {keypointCount}</span></div><div className="full-body-camera-controls"><button type="button" onClick={switchCamera} disabled={!streamRef.current || videoDevices.length <= 1 || ['requesting', 'loading'].includes(status)} aria-label="Switch camera"><span aria-hidden="true">⇄</span><span>CAMERA {selectedIndex + 1} / {Math.max(1, videoDevices.length)}</span></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
-      <aside className="mobility-telemetry-panel"><div className="telemetry-panel-heading"><div><span className="full-body-eyebrow">LIVE ANGLE TELEMETRY</span><h3>{activeStep ? activeStep.title : 'Awaiting pose lock'}</h3></div><span className={`telemetry-status-pill is-${verification.ready ? 'optimal' : 'warning'}`}>{verification.ready ? 'OPTIMAL' : 'ALIGN'}</span></div><div className="telemetry-score-row"><RadialScore label="SCORE" value={stepAnalysis?.score} /><RadialScore label="SYMMETRY" value={stepAnalysis?.symmetry} /><div className="telemetry-countdown"><span>TIME LEFT</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong><small>{verification.ready ? 'POSE LOCKED' : 'SEARCHING'}</small></div></div><div className="telemetry-gauge-stack"><CompactAngleGauge label="LEFT SHOULDER" value={jointTelemetry.leftShoulder} target={[80, 120]} /><CompactAngleGauge label="RIGHT SHOULDER" value={jointTelemetry.rightShoulder} target={[80, 120]} /><CompactAngleGauge label="LEFT ELBOW" value={jointTelemetry.leftElbow} target={[70, 145]} /><CompactAngleGauge label="RIGHT ELBOW" value={jointTelemetry.rightElbow} target={[70, 145]} /><CompactAngleGauge label="LEFT HIP" value={jointTelemetry.leftHip} target={[70, 150]} /><CompactAngleGauge label="RIGHT HIP" value={jointTelemetry.rightHip} target={[70, 150]} /><CompactAngleGauge label="LEFT KNEE" value={jointTelemetry.leftKnee} target={[70, 155]} /><CompactAngleGauge label="RIGHT KNEE" value={jointTelemetry.rightKnee} target={[70, 155]} /></div>{status === 'complete' && <div className="telemetry-result"><span>PROTOCOL COMPLETE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div>}{error && <p className="full-body-error" role="alert">{error}</p>}</aside>
+      <div className="mobility-portal-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" /><div className="full-body-feed-instructions" aria-live="polite"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{activeStep ? activeStep.instruction : verification.detail}</strong><small>{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</small></div>{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-tracking-status" role="status">{trackingMessage}</div><div className="full-body-debug-banner" role="status" aria-live="polite"><span>DETECTOR LOADED: {detectorReady ? 'TRUE' : 'FALSE'}</span><span>VIDEO READY: {videoReady ? 'TRUE' : 'FALSE'}</span><span>KEYPOINTS: {keypointCount}</span></div><div className="full-body-camera-controls"><button type="button" onClick={switchCamera} disabled={!streamRef.current || videoDevices.length <= 1 || ['requesting', 'loading'].includes(status)} aria-label="Switch camera"><span aria-hidden="true">⇄</span><span>CAMERA {selectedIndex + 1} / {Math.max(1, videoDevices.length)}</span></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} biomechanicsRef={biomechanicsRef} /></div>
+      <aside className="mobility-telemetry-panel"><div className="telemetry-panel-heading"><div><span className="full-body-eyebrow">LIVE ANGLE TELEMETRY</span><h3>{activeStep ? activeStep.title : 'Awaiting pose lock'}</h3></div><span className={`telemetry-status-pill is-${verification.ready ? 'optimal' : 'warning'}`}>{verification.ready ? 'OPTIMAL' : 'ALIGN'}</span></div><div className="telemetry-score-row"><RadialScore label="SCORE" value={stepAnalysis?.score} /><RadialScore label="SYMMETRY" value={stepAnalysis?.symmetry} /><div className="telemetry-countdown"><span>TIME LEFT</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong><small>{verification.ready ? 'POSE LOCKED' : 'SEARCHING'}</small></div></div><div className="telemetry-vector-row"><span>360° VECTOR</span><strong>Y {jointTelemetry.rom?.rotational ?? '--'}° · P {jointTelemetry.rom?.lateral ?? '--'}° · R {jointTelemetry.rom?.frontal ?? '--'}°</strong><small>ω {jointTelemetry.angularVelocity?.shoulder?.magnitude || 0}°/s</small></div><div className="telemetry-gauge-stack"><CompactAngleGauge label="LEFT SHOULDER" value={jointTelemetry.leftShoulder} target={[80, 120]} /><CompactAngleGauge label="RIGHT SHOULDER" value={jointTelemetry.rightShoulder} target={[80, 120]} /><CompactAngleGauge label="LEFT ELBOW" value={jointTelemetry.leftElbow} target={[70, 145]} /><CompactAngleGauge label="RIGHT ELBOW" value={jointTelemetry.rightElbow} target={[70, 145]} /><CompactAngleGauge label="LEFT HIP" value={jointTelemetry.leftHip} target={[70, 150]} /><CompactAngleGauge label="RIGHT HIP" value={jointTelemetry.rightHip} target={[70, 150]} /><CompactAngleGauge label="LEFT KNEE" value={jointTelemetry.leftKnee} target={[70, 155]} /><CompactAngleGauge label="RIGHT KNEE" value={jointTelemetry.rightKnee} target={[70, 155]} /></div><div className="muscle-map"><div className="muscle-map-heading"><span>ESTIMATED ACTIVATION / TORQUE + VELOCITY</span><b>LIVE</b></div>{MUSCLE_GROUPS.map((muscle) => <MuscleBar key={muscle.id} muscle={muscle} value={jointTelemetry.activation?.[muscle.id]} />)}</div>{status === 'complete' && <div className="telemetry-result"><span>PROTOCOL COMPLETE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div>}{error && <p className="full-body-error" role="alert">{error}</p>}</aside>
     </div>
     <footer className="mobility-control-dock"><div className="dock-readout"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status === 'idle' ? 'SYSTEM STANDBY' : status.toUpperCase()}</strong></div><div className="dock-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <button className="dock-secondary" onClick={stop}>STOP TRACKING</button>}<button className="dock-secondary" onClick={saveCurrentResult} disabled={!result}>SAVE RESULT</button><button className="dock-secondary" onClick={() => { stop(); onClose?.() }}>CLOSE</button></div><span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
   </section></div>

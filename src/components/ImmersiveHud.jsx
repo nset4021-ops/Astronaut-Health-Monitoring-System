@@ -1,7 +1,7 @@
 import { Camera, Check, Crosshair, Hand, Mic, Rotate3D, WifiOff, X } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
-const FullBodyDiagnostic = lazy(() => import('./FullBodyDiagnostic'))
+const FullBodyDiagnostic = lazy(() => import('./SyncedAvatarDiagnostic'))
 
 function Readout({ label, value, tone = 'cyan' }) {
   return <div className="readout"><span>{label}</span><strong className={`tone-${tone}`}>{value}</strong></div>

@@ -83,4 +83,19 @@ export function getMetricStatus(metric) {
   return metric.status === 'stable' ? 'STABLE' : 'WATCH'
 }
 
+export function summarizeMobilityTelemetry(snapshot) {
+  const payload = snapshot?.payload || snapshot || {}
+  const activation = payload.muscleActivation || {}
+  const entries = Object.entries(activation).filter(([, value]) => Number.isFinite(value))
+  const averageActivation = entries.length
+    ? Math.round(entries.reduce((sum, [, value]) => sum + value, 0) / entries.length)
+    : 0
+  const highestLoad = entries.sort(([, left], [, right]) => right - left)[0]
+  return {
+    averageActivation,
+    highestLoad: highestLoad ? { group: highestLoad[0], engagement: highestLoad[1] } : null,
+    rom: payload.rom || {},
+  }
+}
+
 export { defaultState, metricDefinitions, telemetryRows }
