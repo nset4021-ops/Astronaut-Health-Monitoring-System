@@ -156,13 +156,28 @@ export default function MobilityTracker({ camera, onTelemetry }) {
   const [detectorStatus, setDetectorStatus] = useState('loading')
   const [telemetry, setTelemetry] = useState(null)
   const [detectorError, setDetectorError] = useState('')
+  const [webglSupported, setWebglSupported] = useState(false)
   const [webglReady, setWebglReady] = useState(false)
 
   useEffect(() => {
     const canvas = document.createElement('canvas')
     const context = canvas.getContext('webgl2') || canvas.getContext('webgl')
-    setWebglReady(Boolean(context))
+    const supported = Boolean(context)
+    setWebglSupported(supported)
+    setWebglReady(supported)
   }, [])
+
+  const handleWebglCreated = ({ gl }) => {
+    const canvas = gl.domElement
+    const onContextLost = (event) => {
+      event.preventDefault()
+      setWebglReady(false)
+    }
+    const onContextRestored = () => setWebglReady(true)
+    canvas.addEventListener('webglcontextlost', onContextLost)
+    canvas.addEventListener('webglcontextrestored', onContextRestored)
+    setWebglReady(true)
+  }
 
   useEffect(() => {
     let disposed = false
@@ -260,13 +275,13 @@ export default function MobilityTracker({ camera, onTelemetry }) {
         {!isActive && <div className="empty-state"><Gauge size={26} /><strong>WAITING FOR CAMERA</strong><small>Initialize the webcam portal to begin tracking.</small></div>}
         {detectorError && <div className="error-copy tracker-error" role="alert">{detectorError}</div>}
       </div>
-      <div className="tracker-telemetry">
+      <div className="tracker-telemetry custom-scrollbar">
         <div className="telemetry-title"><span>JOINT VECTORS / ANGLES</span><Rotate3D size={14} /></div>
         <div className="angle-grid">{[['SHOULDER L', telemetry?.angles?.leftShoulder], ['SHOULDER R', telemetry?.angles?.rightShoulder], ['ELBOW L', telemetry?.angles?.leftElbow], ['ELBOW R', telemetry?.angles?.rightElbow], ['KNEE L', telemetry?.angles?.leftKnee], ['KNEE R', telemetry?.angles?.rightKnee]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value ?? '--'}°</strong></div>)}</div>
         <div className="vector-summary">Y {telemetry?.vectors?.shoulders?.yaw ?? '--'}° / P {telemetry?.vectors?.shoulders?.pitch ?? '--'}° / R {telemetry?.vectors?.shoulders?.roll ?? '--'}° · VELOCITY {telemetry?.velocity || 0}%</div>
         <div className="muscle-grid">{[['DELTOIDS', telemetry?.activation?.deltoids], ['BICEPS', telemetry?.activation?.biceps], ['TRAPEZIUS', telemetry?.activation?.trapezius], ['QUADRICEPS', telemetry?.activation?.quadriceps]].map(([label, value]) => <MetricBar key={label} label={label} value={value} />)}</div>
       </div>
-      <div className="avatar-stage">{webglReady ? <Canvas camera={{ position: [0, 0, 6], fov: 40 }}><ambientLight intensity={1.5} /><pointLight position={[2, 2, 4]} intensity={3} color="#67e8f9" /><Avatar keypointsRef={keypointsRef} telemetryRef={telemetryRef} videoRef={videoRef} /></Canvas> : <div className="empty-state"><strong>3D RIG UNAVAILABLE</strong><small>WebGL is not available. Camera telemetry remains active.</small></div>}<span className="avatar-label">3D RIG / LIVE KEYPOINT SYNC</span></div>
+      <div className="avatar-stage">{webglSupported ? <><Canvas key="avatar-canvas" onCreated={handleWebglCreated} camera={{ position: [0, 0, 6], fov: 40 }}><ambientLight intensity={1.5} /><pointLight position={[2, 2, 4]} intensity={3} color="#67e8f9" /><Avatar keypointsRef={keypointsRef} telemetryRef={telemetryRef} videoRef={videoRef} /></Canvas>{!webglReady && <div className="empty-state"><strong>3D RIG RECOVERING</strong><small>WebGL context is recovering. Camera telemetry remains active.</small></div>}</> : <div className="empty-state"><strong>3D RIG UNAVAILABLE</strong><small>WebGL is not available. Camera telemetry remains active.</small></div>}<span className="avatar-label">3D RIG / LIVE KEYPOINT SYNC</span></div>
     </section>
   )
 }

@@ -1,9 +1,10 @@
 import { Camera, CircleStop } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 export default function WebcamPortal({ camera }) {
   const { videoRef, status, error, dimensions, start, stop } = camera
   return (
-    <section className="glass-panel webcam-portal" aria-label="Webcam portal">
+    <motion.section className="glass-panel webcam-portal" aria-label="Webcam portal" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.35 }}>
       <div className="panel-heading">
         <div>
           <span className="eyebrow">01 / CAMERA PORTAL</span>
@@ -26,12 +27,12 @@ export default function WebcamPortal({ camera }) {
         </div>
       </div>
       <div className="portal-actions">
-        <button type="button" className="primary-button" onClick={status === 'active' ? stop : start}>
+        <motion.button type="button" className="primary-button" onClick={status === 'active' ? stop : start} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
           {status === 'active' ? <CircleStop size={15} /> : <Camera size={15} />}
           {status === 'active' ? 'STOP CAMERA' : 'INITIALIZE CAMERA'}
-        </button>
+        </motion.button>
         {error && <span className="error-copy" role="alert">{error}</span>}
       </div>
-    </section>
+    </motion.section>
   )
 }
