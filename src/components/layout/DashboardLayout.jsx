@@ -2,7 +2,7 @@ import { Component, useCallback, useState } from 'react'
 import WebcamPortal from '../camera/WebcamPortal'
 import StressInjuryScanner from '../scanner/StressInjuryScanner'
 import MobilityTracker from '../tracker/MobilityTracker'
-import { useCamera } from '../../hooks/useCamera'
+import { useCameraStream } from '../../hooks/useCameraStream'
 
 export class DashboardErrorBoundary extends Component {
   state = { hasError: false }
@@ -22,7 +22,7 @@ export class DashboardErrorBoundary extends Component {
 }
 
 export default function DashboardLayout() {
-  const camera = useCamera()
+  const camera = useCameraStream()
   const [telemetry, setTelemetry] = useState(null)
   const handleTelemetry = useCallback((nextTelemetry) => setTelemetry(nextTelemetry), [])
   return (
