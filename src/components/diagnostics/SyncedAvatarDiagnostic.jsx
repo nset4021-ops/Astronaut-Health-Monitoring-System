@@ -246,8 +246,8 @@ export default function SyncedAvatarDiagnostic({ camera, onTelemetry }) {
           <h2>Live crew digital twin</h2>
         </div>
         <div className="mode-toggle" role="group" aria-label="Viewport mode">
-          <button type="button" className={mode === 'skeleton' ? 'is-selected' : ''} onClick={() => setMode('skeleton')}>SKELETON</button>
-          <button type="button" className={mode === 'avatar' ? 'is-selected' : ''} onClick={() => setMode('avatar')}>AVATAR</button>
+          <button type="button" aria-label="Show live camera skeleton overlay" className={mode === 'skeleton' ? 'is-selected' : ''} onClick={() => setMode('skeleton')}>SKELETON</button>
+          <button type="button" aria-label="Show synchronized 3D avatar" className={mode === 'avatar' ? 'is-selected' : ''} onClick={() => setMode('avatar')}>AVATAR</button>
         </div>
       </div>
 
@@ -267,6 +267,19 @@ export default function SyncedAvatarDiagnostic({ camera, onTelemetry }) {
           <AvatarSkeleton landmarksRef={landmarksRef} mode={mode} />
         </Canvas>
 
+        <div className="hud-reticle" aria-hidden="true">
+          <span className="reticle-corner corner-top-left" />
+          <span className="reticle-corner corner-top-right" />
+          <span className="reticle-corner corner-bottom-left" />
+          <span className="reticle-corner corner-bottom-right" />
+          <span className="reticle-crosshair" />
+          <span className="radar-sweep" />
+        </div>
+        <div className="hud-dial dial-left" aria-hidden="true"><span>HRV</span><strong>72</strong><small>BPM</small></div>
+        <div className="hud-dial dial-right" aria-hidden="true"><span>O2</span><strong>98</strong><small>% SAT</small></div>
+        <div className="frequency-wave" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, index) => <i key={index} style={{ '--wave-height': `${12 + ((index * 17) % 28)}px` }} />)}
+        </div>
         {!isActive && (
           <div className="viewport-empty">
             <strong>CAMERA STANDBY</strong>
@@ -278,6 +291,9 @@ export default function SyncedAvatarDiagnostic({ camera, onTelemetry }) {
           <span>VISION {status.toUpperCase()}</span>
           <span>POSE {landmarks.length >= 12 ? 'LOCKED' : 'SEARCHING'}</span>
         </div>
+        <p className="sr-only" aria-live="polite">
+          Camera {cameraStatus}. Vision system {status}. Pose {landmarks.length >= 12 ? 'locked' : 'searching'}.
+        </p>
       </div>
       {error && <div className="diagnostic-error" role="alert">{error}</div>}
     </section>
