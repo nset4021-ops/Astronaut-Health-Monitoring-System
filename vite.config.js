@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Three.js is intentionally isolated as a vendor chunk; its minified runtime
+    // is larger than Vite's default warning threshold even when code-split.
+    chunkSizeWarningLimit: 750,
     rollupOptions: {
       output: {
         manualChunks: {
