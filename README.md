@@ -16,7 +16,7 @@ Sensors / manual entry / crew devices
 	Crew feedback     Local audit/event log
 			 |
 	 Sync queue <----> Delay-tolerant mission gateway <----> Ground services
-																			|
+																		|
 												 Flight surgeon / research APIs
 ```
 

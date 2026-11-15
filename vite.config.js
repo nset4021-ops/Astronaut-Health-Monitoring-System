@@ -9,12 +9,15 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          react: ['react', 'react-dom'],
           three: ['three'],
           fiber: ['@react-three/fiber'],
           drei: ['@react-three/drei'],
           tfjs: ['@tensorflow/tfjs'],
           tfjsBackend: ['@tensorflow/tfjs-backend-webgl'],
           poseDetection: ['@tensorflow-models/pose-detection'],
+          mediapipe: ['@mediapipe/tasks-vision'],
+          motion: ['framer-motion'],
           icons: ['lucide-react'],
         },
       },
