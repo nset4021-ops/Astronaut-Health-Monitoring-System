@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:streamlit": "vite build --mode streamlit",
     "preview": "vite preview",
     "test": "vitest run"
   },

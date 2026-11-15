@@ -1,15 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/Astronaut-Health-Monitoring-System/' : '/',
+export default defineConfig(({ mode }) => {
+  const isStreamlit = mode === 'streamlit'
+
+  return {
+  base: isStreamlit ? './' : process.env.GITHUB_ACTIONS ? '/Astronaut-Health-Monitoring-System/' : '/',
   plugins: [react()],
   build: {
+    cssCodeSplit: !isStreamlit,
     // The lazy pose-engine vendor payloads contain indivisible third-party WASM/ML code.
     chunkSizeWarningLimit: 1100,
     rollupOptions: {
       output: {
-        manualChunks: {
+        inlineDynamicImports: isStreamlit,
+        manualChunks: isStreamlit ? undefined : {
           three: ['three'],
           fiber: ['@react-three/fiber'],
           drei: ['@react-three/drei'],
@@ -21,4 +26,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })
