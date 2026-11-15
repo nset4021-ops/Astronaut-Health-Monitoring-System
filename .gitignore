@@ -8,4 +8,5 @@ data/*.db-wal
 .streamlit/secrets.toml
 node_modules/
 dist/
+
 node_modules
