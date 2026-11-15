@@ -61,7 +61,7 @@ function DecisionConsole({ activeAlert, alertCount, onOpenScanner, onOpenBriefin
     {activeAlert && <button className="command-alert-action" style={{ pointerEvents: 'auto' }} onClick={onApplyCountermeasure}><Sparkles size={14} /> APPLY COUNTERMEASURE <span>↗</span></button>}
     <button className={`${LIQUID_GLASS_CLASSES} liquid-glass-surface briefing-card`} style={{ pointerEvents: 'auto' }} onClick={onOpenBriefing}><div><span className="command-eyebrow">NEXT CREW ACTION</span><strong>Daily recovery briefing</strong><small>Sleep · stress · mission readiness</small></div><Clock3 size={18} /></button>
     <button className="command-alert-action" style={{ pointerEvents: 'auto' }} onClick={onOpenScanner}><Dna size={14} /> OPEN STRESS & INJURY SCANNER <span>↗</span></button>
-    <div className="voice-console"><div><Mic size={14} /><span>VOICE LINK</span></div><strong>{voice?.isListening ? 'LISTENING...' : 'READY FOR COMMAND'}</strong><small>{voice?.transcript || '“Run daily briefing”'}</small></div>
+    <div className="voice-console"><div><Mic size={14} /><span>VOICE LINK</span></div><strong>{voice?.error || (voice?.isListening ? 'LISTENING...' : 'READY FOR COMMAND')}</strong><small>{voice?.error ? 'Check browser microphone permissions.' : voice?.transcript || '“Run daily briefing”'}</small></div>
   </aside>
 }
 

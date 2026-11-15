@@ -5,6 +5,7 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { exportMobilityDiagnostic } from '../lib/pdfExport'
 import './full-body-diagnostic.css'
 
 const VIDEO_CONSTRAINTS = {
@@ -286,6 +287,7 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
   const [jointTelemetry, setJointTelemetry] = useState({})
   const [secondsLeft, setSecondsLeft] = useState(null)
   const [result, setResult] = useState(null)
+  const [exportError, setExportError] = useState('')
   const [videoDevices, setVideoDevices] = useState([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [trackingMessage, setTrackingMessage] = useState('Tracking standby')
@@ -516,6 +518,15 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
     const record = saveDiagnostic(result, onDiagnosticComplete)
     onSnapshotSaved?.(record)
   }
+  const exportResultPdf = () => {
+    if (!result) return
+    try {
+      exportMobilityDiagnostic({ result, observedAt: new Date().toISOString() })
+      setExportError('')
+    } catch (caught) {
+      setExportError(caught?.message || 'Unable to create the mobility PDF report.')
+    }
+  }
 
   return <div className="full-body-layer"><section className="full-body-console" role="dialog" aria-modal="true" aria-label="Full body muscle tone diagnostic">
     <header className="full-body-header"><div><span className="full-body-eyebrow">AURORA MEDICAL // FLEX & HOLD PROTOCOL</span><h2>Mobility command station</h2></div><div className="full-body-header-status"><span>{status === 'active' ? 'LIVE POSE LINK' : status.toUpperCase()}</span><button className="full-body-close" onClick={() => { stop(); onClose?.() }} aria-label="Close diagnostic">×</button></div></header>
@@ -523,7 +534,8 @@ export default function FullBodyDiagnostic({ onClose, onDiagnosticComplete, onSn
       <div className="mobility-portal-grid"><div className={`full-body-feed ${verification.ready ? 'is-ready' : 'is-searching'}`}><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} aria-label="Full body skeletal pose overlay" /><div className="full-body-feed-instructions" aria-live="polite"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{activeStep ? activeStep.instruction : verification.detail}</strong><small>{activeStep ? activeStep.cue : 'Hold a neutral stance once your full body is framed.'}</small></div>{!['calibrating', 'active', 'complete'].includes(status) && <div className="full-body-placeholder"><span>◉</span><strong>{status === 'loading' ? 'LOADING POSE ENGINE' : 'CAMERA STANDBY'}</strong><small>LOCAL INFERENCE / MOVENET LIGHTNING</small></div>}<div className="full-body-feed-status"><span className="full-body-status-dot" />{verification.message}</div><div className="full-body-tracking-status" role="status">{trackingMessage}</div><div className="full-body-camera-controls"><button type="button" onClick={switchCamera} disabled={!streamRef.current || videoDevices.length <= 1 || ['requesting', 'loading'].includes(status)} aria-label="Switch camera"><span aria-hidden="true">⇄</span><span>CAMERA {selectedIndex + 1} / {Math.max(1, videoDevices.length)}</span></button></div></div><AvatarViewport keypointsRef={keypointsRef} videoRef={videoRef} /></div>
       <aside className="mobility-telemetry-panel"><div className="telemetry-panel-heading"><div><span className="full-body-eyebrow">LIVE ANGLE TELEMETRY</span><h3>{activeStep ? activeStep.title : 'Awaiting pose lock'}</h3></div><span className={`telemetry-status-pill is-${verification.ready ? 'optimal' : 'warning'}`}>{verification.ready ? 'OPTIMAL' : 'ALIGN'}</span></div><div className="telemetry-score-row"><RadialScore label="SCORE" value={stepAnalysis?.score} /><RadialScore label="SYMMETRY" value={stepAnalysis?.symmetry} /><div className="telemetry-countdown"><span>TIME LEFT</span><strong>{secondsLeft !== null ? `${secondsLeft}s` : '--'}</strong><small>{verification.ready ? 'POSE LOCKED' : 'SEARCHING'}</small></div></div><div className="telemetry-gauge-stack"><CompactAngleGauge label="LEFT SHOULDER" value={jointTelemetry.leftShoulder} target={[80, 120]} /><CompactAngleGauge label="RIGHT SHOULDER" value={jointTelemetry.rightShoulder} target={[80, 120]} /><CompactAngleGauge label="LEFT ELBOW" value={jointTelemetry.leftElbow} target={[70, 145]} /><CompactAngleGauge label="RIGHT ELBOW" value={jointTelemetry.rightElbow} target={[70, 145]} /><CompactAngleGauge label="LEFT HIP" value={jointTelemetry.leftHip} target={[70, 150]} /><CompactAngleGauge label="RIGHT HIP" value={jointTelemetry.rightHip} target={[70, 150]} /><CompactAngleGauge label="LEFT KNEE" value={jointTelemetry.leftKnee} target={[70, 155]} /><CompactAngleGauge label="RIGHT KNEE" value={jointTelemetry.rightKnee} target={[70, 155]} /></div>{status === 'complete' && <div className="telemetry-result"><span>PROTOCOL COMPLETE</span><strong>{result?.diagnostic}</strong><small>{result?.stepScores?.map((item) => `${item.id.toUpperCase()} ${item.score}`).join(' · ')}</small></div>}{error && <p className="full-body-error" role="alert">{error}</p>}</aside>
     </div>
-    <footer className="mobility-control-dock"><div className="dock-readout"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status === 'idle' ? 'SYSTEM STANDBY' : status.toUpperCase()}</strong></div><div className="dock-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <button className="dock-secondary" onClick={stop}>STOP TRACKING</button>}<button className="dock-secondary" onClick={saveCurrentResult} disabled={!result}>SAVE RESULT</button><button className="dock-secondary" onClick={() => { stop(); onClose?.() }}>CLOSE</button></div><span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
+    <footer className="mobility-control-dock"><div className="dock-readout"><span>{activeStep ? `STEP ${activeStep.number} / 04` : 'CALIBRATION GATE'}</span><strong>{status === 'active' ? `HOLD POSITION · ${secondsLeft || 0}s` : status === 'idle' ? 'SYSTEM STANDBY' : status.toUpperCase()}</strong></div><div className="dock-actions">{status === 'idle' || status === 'error' ? <button className="full-body-primary" onClick={start}>INITIALIZE CHECK <span>↗</span></button> : status === 'complete' ? <button className="full-body-primary" onClick={() => { stop(); start() }}>RUN AGAIN <span>↻</span></button> : <button className="dock-secondary" onClick={stop}>STOP TRACKING</button>}<button className="dock-secondary" onClick={saveCurrentResult} disabled={!result}>SAVE RESULT</button><button className="dock-secondary" onClick={exportResultPdf} disabled={!result}>EXPORT PDF</button><button className="dock-secondary" onClick={() => { stop(); onClose?.() }}>CLOSE</button></div><span className="full-body-disclaimer">LOCAL SCREENING ONLY · NOT A DIAGNOSIS</span></footer>
+    {exportError && <p className="full-body-error" role="alert">{exportError}</p>}
   </section></div>
 }
 

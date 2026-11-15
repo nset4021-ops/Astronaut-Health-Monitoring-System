@@ -8,13 +8,15 @@ function Readout({ label, value, tone = 'cyan' }) {
 }
 
 export function ImmersiveHud({ state, activeAlerts, onTrigger, onOpenMobility, onOpenBriefing, onApplyCountermeasure, voice, hudLocked, onToggleHud }) {
+  const voiceStatus = voice.error || (voice.isListening ? 'MIC ACTIVE · SAY A COMMAND' : voice.isSupported ? 'VOICE COMMANDS READY' : 'VOICE CONTROL UNAVAILABLE')
+
   return <>
     <header className="immersive-header">
       <div className="brand-lockup"><span className="brand-glyph">◈</span><div><span className="eyebrow">AURORA MEDICAL // MK-IV</span><strong>ORBITAL <i>HEALTH</i></strong></div></div>
       <div className="hud-status"><span className="live-dot" /> SYSTEM_ONLINE <span className="divider">//</span> SECURE_HOLO_FEED</div>
       <div className="hud-actions"><button onClick={onOpenBriefing}>BRIEFING</button><button onClick={onOpenMobility}><Camera size={15} /> MOBILITY</button><button onClick={voice.isListening ? voice.stopListening : voice.startListening} className={voice.isListening ? 'voice-active' : ''}><Mic size={15} /> {voice.isListening ? 'LISTENING' : 'VOICE'}</button><button onClick={onToggleHud}>{hudLocked ? 'HUD LOCKED' : 'HUD FLOAT'}</button><button onClick={onTrigger}><Rotate3D size={15} /> GLITCH</button></div>
     </header>
-    <div className={`voice-status ${voice.isListening ? 'is-listening' : ''}`}><Mic size={14} /><span>{voice.isListening ? 'MIC ACTIVE · SAY A COMMAND' : voice.isSupported ? 'VOICE COMMANDS READY' : 'VOICE CONTROL UNAVAILABLE'}</span>{voice.transcript && <small>{voice.transcript}</small>}</div>
+    <div className={`voice-status ${voice.isListening ? 'is-listening' : ''}`} role="status" aria-live="polite"><Mic size={14} /><span>{voiceStatus}</span>{voice.transcript && !voice.error && <small>{voice.transcript}</small>}</div>
     {activeAlerts[0] && <button className="countermeasure-button" onClick={onApplyCountermeasure}>APPLY COUNTERMEASURE <span>→</span></button>}
     <div className="mission-ribbon"><Readout label="MISSION DAY" value="184" /><Readout label="READINESS" value="88%" /><Readout label="OPEN ASSESSMENTS" value={activeAlerts.length} tone={activeAlerts.length ? 'amber' : 'green'} /><Readout label="LOCAL OUTBOX" value={`${state.syncQueue} EVENTS`} /><span className="ribbon-note"><WifiOff size={13} /> OFFLINE READY</span></div>
     <div className="interaction-hint"><Hand size={15} /> DRAG NODES <span>·</span> <Rotate3D size={15} /> ORBIT SCENE <span>·</span> CLICK CORE TO FOCUS</div>
