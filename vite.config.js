@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  base: process.env.GITHUB_ACTIONS ? '/Astronaut-Health-Monitoring-System/' : '/',
   plugins: [react()],
   build: {
     // The lazy pose-engine vendor payloads contain indivisible third-party WASM/ML code.
