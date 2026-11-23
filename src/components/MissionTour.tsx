@@ -107,6 +107,9 @@ export default function MissionTour({ open, onClose, navigate }: MissionTourProp
       }
     };
     window.setTimeout(highlight, 180);
+    return () => {
+      document.querySelectorAll(".tour-spotlight").forEach((element) => element.classList.remove("tour-spotlight"));
+    };
   }, [open, stepIndex, navigate]);
 
   useEffect(() => {
