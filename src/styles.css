@@ -23,13 +23,25 @@
 * { box-sizing: border-box; }
 html, body, #root { min-width: 320px; min-height: 100%; }
 body { margin: 0; background: #0B1120; }
+h1, h2, h3, strong { letter-spacing: -0.01em; }
+main article {
+  background: rgba(15, 23, 42, 0.90);
+  border-color: #1e293b;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.20);
+  border-radius: 12px;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+main article:hover {
+  border-color: #334155;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+}
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [role="tab"]:focus-visible {
   outline: 2px solid #38bdf8;
   outline-offset: 2px;
 }
-code, .mono, .tabular { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+code, .mono, .tabular { font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 
 .camera-layer { position: relative; width: 100%; }
 .camera-console { border: 1px solid #334155; border-radius: 8px; background: #1e293b; overflow: hidden; }

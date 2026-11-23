@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
   optimizeDeps: {
     entries: ['index.html'],
     force: true,
+    exclude: ['jspdf'],
     include: ['react', 'react-dom/client', 'react/jsx-runtime'],
   },
   build: {
