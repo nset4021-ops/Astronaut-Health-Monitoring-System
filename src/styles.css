@@ -41,7 +41,7 @@ h1, h2, h3, strong { letter-spacing: -0.01em; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tour-spotlight {
+[data-tour-mode="active"] .tour-spotlight {
   position: relative;
   z-index: 45;
   border-radius: 12px;
@@ -70,6 +70,17 @@ button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [role="tab"]:focus-visible {
   outline: 2px solid #38bdf8;
   outline-offset: 2px;
+}
+[role="tab"] {
+  overflow: hidden;
+}
+[role="tab"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+[role="tab"]:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 code, .mono, .tabular { font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 

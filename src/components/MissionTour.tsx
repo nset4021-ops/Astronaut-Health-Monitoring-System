@@ -80,21 +80,26 @@ export default function MissionTour({ open, onClose, navigate }: MissionTourProp
 
   useEffect(() => {
     if (!open) return;
+    document.body.dataset.tourMode = "active";
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
       if (event.key === "ArrowRight") setStepIndex((current) => Math.min(tourSteps.length - 1, current + 1));
       if (event.key === "ArrowLeft") setStepIndex((current) => Math.max(0, current - 1));
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      delete document.body.dataset.tourMode;
+    };
   }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
     const step = tourSteps[stepIndex];
     navigate(step.route);
-    if (step.camera) window.setTimeout(() => window.dispatchEvent(new CustomEvent("aurora-tour-camera")), 80);
-
+    let highlightTimer = 0;
+    let cameraTimer = 0;
+    const retryTimers: number[] = [];
     let attempts = 0;
     const highlight = () => {
       document.querySelectorAll(".tour-spotlight").forEach((element) => element.classList.remove("tour-spotlight"));
@@ -103,11 +108,15 @@ export default function MissionTour({ open, onClose, navigate }: MissionTourProp
         target.classList.add("tour-spotlight");
         target.scrollIntoView({ behavior: "smooth", block: "center" });
       } else if (attempts++ < 12) {
-        window.setTimeout(highlight, 100);
+        retryTimers.push(window.setTimeout(highlight, 100));
       }
     };
-    window.setTimeout(highlight, 180);
+    highlightTimer = window.setTimeout(highlight, 180);
+    if (step.camera) cameraTimer = window.setTimeout(() => window.dispatchEvent(new CustomEvent("aurora-tour-camera")), 80);
     return () => {
+      window.clearTimeout(highlightTimer);
+      window.clearTimeout(cameraTimer);
+      retryTimers.forEach((timer) => window.clearTimeout(timer));
       document.querySelectorAll(".tour-spotlight").forEach((element) => element.classList.remove("tour-spotlight"));
     };
   }, [open, stepIndex, navigate]);
