@@ -7,6 +7,10 @@ export default defineConfig(({ mode }) => {
   return {
   base: isStreamlit ? './' : process.env.GITHUB_ACTIONS ? '/Astronaut-Health-Monitoring-System/' : '/',
   plugins: [react()],
+  optimizeDeps: {
+    entries: ['index.html'],
+    force: true,
+  },
   build: {
     cssCodeSplit: !isStreamlit,
     // The lazy pose-engine vendor payloads contain indivisible third-party WASM/ML code.
