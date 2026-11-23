@@ -1,6 +1,23 @@
 # Astronaut Health Monitoring System
 
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the modular monolith directory layout and offline-first migration boundaries.
+
 An offline-first health monitoring application for crew members on long-duration missions. This document defines the first architectural and data-model baseline. It is a decision-support system, not a replacement for flight surgeon oversight or an autonomous diagnostic device.
+
+## Vision
+
+- Protect astronaut health and mission readiness through timely, reliable, and explainable health insights.
+- Give crews and flight surgeons a shared view of health trends, risks, and recommended actions even when communication is delayed.
+- Build a trustworthy decision-support system that keeps humans in control of medical judgment.
+
+## Goals
+
+- Capture and organize sensor data, manual observations, assessments, interventions, and acknowledgements in one consistent health record.
+- Keep core monitoring, data entry, alerts, and approved guidance available offline.
+- Detect meaningful changes from individual baselines and present findings with clear explanations and data freshness.
+- Support delay-tolerant synchronization without duplicating records or hiding clinical conflicts.
+- Protect sensitive health information with encryption, least-privilege access, auditability, data minimization, and controlled retention.
+- Provide configurable, versioned, and reviewable rules and countermeasures that can evolve with mission requirements.
 
 ## Architecture proposal
 

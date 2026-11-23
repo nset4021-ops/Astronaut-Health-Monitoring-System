@@ -1,4 +1,5 @@
 import { metricDefinitions, telemetryRows } from '../data/metrics'
+import { getRule, missionConfig } from './missionConfig'
 
 const STORAGE_KEY = 'orbital-health-console-v1'
 
@@ -34,19 +35,28 @@ export function evaluateAlerts(state) {
   const alerts = []
   metricDefinitions.forEach((metric) => {
     const value = metric.numericValue
-    const isNormal = value >= metric.normal[0] && value <= metric.normal[1]
+    const rule = getRule(metric.id)
+    if (!rule) return
+    const isNormal = value >= rule.watchBand.low && value <= rule.watchBand.high
     if (isNormal) return
-    const urgent = value < metric.concern[0] || value > metric.concern[1]
+    const urgent = rule.urgentBand
+      ? value < rule.urgentBand.low || value > rule.urgentBand.high
+      : false
+    const countermeasure = missionConfig.countermeasures.find(
+      (item) => item.actionCode === rule.actionCode,
+    )
     alerts.push({
       id: `metric-${metric.id}`,
       status: urgent ? 'urgent' : 'watch',
       severity: urgent ? 'URGENT' : 'WATCH',
       domain: metric.label.toUpperCase(),
       title: urgent ? `${metric.label} outside concern boundary` : `${metric.label} needs attention`,
-      body: `${metric.detail} is ${value} ${metric.unit}, outside the configured ${isNormal ? 'baseline' : 'watch'} range.`,
-      action: metric.countermeasure,
+      body: `${metric.detail} is ${value} ${metric.unit}, outside the configured watch range.`,
+      action: countermeasure?.instructions.join(' ') ?? 'Follow the current approved mission protocol.',
       color: metric.color,
-      ruleVersion: 'baseline-v1',
+      ruleVersion: rule.ruleVersion,
+      thresholdSetId: rule.thresholdSetId,
+      configSignature: missionConfig.signature,
     })
   })
   return alerts

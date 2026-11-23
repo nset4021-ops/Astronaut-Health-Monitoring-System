@@ -13,9 +13,6 @@ export const metricDefinitions = [
     detail: 'Resting heart rate',
     range: '50–90 bpm',
     numericValue: 78,
-    normal: [50, 90],
-    concern: [45, 110],
-    countermeasure: 'Pause exertion, repeat after five minutes seated, and contact medical support if persistent.',
     description: 'Autonomic response remains elevated after exercise cycle.',
   },
   {
@@ -32,9 +29,6 @@ export const metricDefinitions = [
     detail: 'Resistive exercise compliance',
     range: '4–7 sessions / 7d',
     numericValue: 3,
-    normal: [4, 7],
-    concern: [0, 2],
-    countermeasure: 'Complete the next approved loading session when cleared and record any equipment issue.',
     description: 'One session short of the current mission target.',
   },
   {
@@ -51,9 +45,6 @@ export const metricDefinitions = [
     detail: 'Symptom and recovery composite',
     range: '80–100 index',
     numericValue: 92,
-    normal: [80, 100],
-    concern: [0, 60],
-    countermeasure: 'Record temperature and symptoms, follow the approved hygiene protocol, and contact medical support for worsening signs.',
     description: 'No reported symptoms. Recovery signals are stable.',
   },
   {
@@ -70,9 +61,6 @@ export const metricDefinitions = [
     detail: 'Mood, sleep, and perceived stress',
     range: '7–10 wellbeing',
     numericValue: 6.4,
-    normal: [7, 10],
-    concern: [0, 3],
-    countermeasure: 'Protect the next sleep opportunity and request a private check-in if the score remains low.',
     description: 'Sleep debt and isolation load merit a protected recovery block.',
   },
   {
@@ -89,9 +77,6 @@ export const metricDefinitions = [
     detail: 'Sleep cycle efficiency',
     range: '80–100% efficiency',
     numericValue: 74,
-    normal: [80, 100],
-    concern: [0, 55],
-    countermeasure: 'Protect the next sleep opportunity, reduce light exposure before rest, and review the station-time schedule.',
     description: 'Melatonin proxy and sleep timing indicate circadian drift.',
   },
   {
@@ -108,9 +93,6 @@ export const metricDefinitions = [
     detail: 'Spatial orientation index',
     range: '75–100 index',
     numericValue: 86,
-    normal: [75, 100],
-    concern: [0, 55],
-    countermeasure: 'Pause rapid head movement, use the approved visual fixation drill, and repeat the balance check.',
     description: 'Balance and sensorimotor adaptation remain within the mission envelope.',
   },
   {
@@ -127,9 +109,6 @@ export const metricDefinitions = [
     detail: 'Hydration and electrolyte balance',
     range: '80–100% balance',
     numericValue: 91,
-    normal: [80, 100],
-    concern: [0, 60],
-    countermeasure: 'Follow the hydration plan and confirm the next electrolyte serving before exercise.',
     description: 'Fluid shift, sodium, potassium, and magnesium proxies are nominal.',
   },
   {
@@ -146,9 +125,6 @@ export const metricDefinitions = [
     detail: 'Epigenetic and DNA repair proxy',
     range: '0–35 stress index',
     numericValue: 18,
-    normal: [0, 35],
-    concern: [60, 100],
-    countermeasure: 'Review radiation exposure and recovery load with medical support before the next high-intensity work block.',
     description: 'Oxidative stress remains low while DNA repair proxy signals are stable.',
   },
 ]

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "configId": "mission-rule-set",
+  "configVersion": "1.0.0",
+  "signature": "UNSIGNED-DEMO-REPLACE-IN-MISSION-BUILD",
+  "effectiveFrom": "2026-01-01T00:00:00.000Z",
+  "expiresAt": "2026-12-31T23:59:59.999Z",
+  "dataFreshness": {
+    "staleAfterSeconds": 3600,
+    "questionableAfterSeconds": 900
+  },
+  "rules": [
+    {
+      "ruleId": "crew-baseline-v1",
+      "ruleVersion": "1.0.0",
+      "domain": "cardiovascular",
+      "metricCode": "resting_heart_rate",
+      "unit": "bpm",
+      "thresholdSetId": "demo-cardio-resting-v1",
+      "watchBand": { "low": 50, "high": 90 },
+      "urgentBand": { "low": 45, "high": 110 },
+      "actionCode": "repeat-seated"
+    },
+    {
+      "ruleId": "crew-baseline-v1",
+      "ruleVersion": "1.0.0",
+      "domain": "bone",
+      "metricCode": "bone",
+      "unit": "sessions / 7d",
+      "thresholdSetId": "demo-bone-v1",
+      "watchBand": { "low": 4, "high": 7 },
+      "urgentBand": { "low": 0, "high": 2 },
+      "actionCode": "repeat-seated"
+    },
+    {
+      "ruleId": "crew-baseline-v1",
+      "ruleVersion": "1.0.0",
+      "domain": "immune",
+      "metricCode": "immune",
+      "unit": "index",
+      "thresholdSetId": "demo-immune-v1",
+      "watchBand": { "low": 80, "high": 100 },
+      "urgentBand": { "low": 0, "high": 60 },
+      "actionCode": "repeat-seated"
+    },
+    {
+      "ruleId": "crew-baseline-v1",
+      "ruleVersion": "1.0.0",
+      "domain": "behavioral_health",
+      "metricCode": "behavior",
+      "unit": "wellbeing",
+      "thresholdSetId": "demo-behavior-v1",
+      "watchBand": { "low": 7, "high": 10 },
+      "urgentBand": { "low": 0, "high": 3 },
+      "actionCode": "repeat-seated"
+    },
+    {
+      "ruleId": "crew-baseline-v1",
+      "ruleVersion": "1.0.0",
+      "domain": "behavioral_health",
+      "metricCode": "sleep",
+      "unit": "percent",
+      "thresholdSetId": "demo-sleep-v1",
+      "watchBand": { "low": 80, "high": 100 },
+      "urgentBand": { "low": 0, "high": 55 },
+      "actionCode": "repeat-seated"
+    }
+  ],
+  "countermeasures": [
+    {
+      "actionCode": "repeat-seated",
+      "title": "Repeat the measurement",
+      "instructions": [
+        "Pause exertion.",
+        "Repeat after five minutes seated.",
+        "Notify medical support if the finding persists."
+      ],
+      "priority": "soon",
+      "requiresConfirmation": true,
+      "escalationPath": "flight-surgeon"
+    }
+  ]
+}
