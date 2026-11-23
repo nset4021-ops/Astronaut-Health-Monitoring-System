@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mission-bg: #0B1120;
+  --color-mission-surface: #1E293B;
+  --color-mission-border: #334155;
+  --color-mission-text: #F8FAFC;
+  --color-mission-muted: #94A3B8;
+  --color-severity-normal: #10B981;
+  --color-severity-watch: #F59E0B;
+  --color-severity-urgent: #F97316;
+  --color-severity-critical: #EF4444;
+  --color-severity-stale: #64748B;
+}
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacScreenFont, "Segoe UI", sans-serif;
+  color: #F8FAFC;
+  background: #0B1120;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-width: 320px; min-height: 100%; }
+body { margin: 0; background: #0B1120; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [role="tab"]:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+code, .mono, .tabular { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+.camera-layer { position: relative; width: 100%; }
+.camera-console { border: 1px solid #334155; border-radius: 8px; background: #1e293b; overflow: hidden; }
+.camera-title { min-height: 72px; display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #334155; }
+.camera-title h2 { margin: 4px 0 0; font-size: 18px; }
+.close-button { min-width: 48px; min-height: 48px; border: 1px solid #64748b; border-radius: 6px; background: #263449; color: #f8fafc; }
+.camera-feed-wrap { position: relative; min-height: 360px; background: #111827; }
+.camera-feed-wrap video, .camera-feed-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camera-placeholder { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 8px; color: #94a3b8; }
+.camera-feed-label { position: absolute; left: 12px; bottom: 12px; border: 1px solid #64748b; border-radius: 999px; background: rgba(15,23,42,.88); padding: 6px 10px; font: 600 10px ui-monospace, monospace; }
+.ai-diagnostic-grid { display: grid; grid-template-columns: 220px 1fr; gap: 12px; padding: 16px; }
+.ai-status-readout, .readout { display: grid; gap: 5px; border: 1px solid #334155; border-radius: 6px; background: #172033; padding: 10px; }
+.ai-status-readout strong { color: #38bdf8; }.ai-status-readout small { color: #94a3b8; }
+.angle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }.readout span { color: #94a3b8; font-size: 9px; }.readout strong { font-family: ui-monospace, monospace; }
+.camera-error, .ai-disclaimer { grid-column: 1 / -1; color: #94a3b8; font-size: 11px; }.camera-error { color: #fca5a5; }
+.ai-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }.camera-button, .save-button { min-height: 48px; border: 1px solid #38bdf8; border-radius: 6px; background: #0369a1; color: white; padding: 0 14px; }.save-button { border-color: #64748b; background: #263449; }.save-button:disabled { opacity: .45; }
+.camera-footer { min-height: 44px; display: flex; justify-content: space-between; border-top: 1px solid #334155; padding: 10px 16px; color: #94a3b8; font: 9px ui-monospace, monospace; }
+@media (max-width: 768px) { .ai-diagnostic-grid { grid-template-columns: 1fr; }.angle-grid { grid-template-columns: repeat(2,1fr); }.ai-actions { flex-direction: column; }.ai-actions button { width: 100%; }.camera-feed-wrap { min-height: 300px; }.camera-footer { flex-direction: column; gap: 5px; } }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
 
-const WASM_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
-const MODEL_PATH = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
+const WASM_PATH = '/models/mediapipe/wasm'
+const MODEL_PATH = '/models/pose_landmarker_lite.task'
 
 function angleAtJoint(a, b, c) {
   const ab = { x: a.x - b.x, y: a.y - b.y }

@@ -134,3 +134,18 @@ export function exportStressInjuryScan({ metrics, zones, overall, triage, active
     ],
   })
 }
+
+export function exportFlightSurgeonHandoff({ summary, observedAt }) {
+  createReport({
+    title: 'Flight Surgeon Handoff Summary',
+    subtitle: 'Crew health status // delay-tolerant mission handoff',
+    observedAt,
+    filename: `flight-surgeon-handoff-${observedAt || Date.now()}`,
+    sections: [
+      {
+        title: 'HANDOFF SUMMARY',
+        rows: [['Clinical status', summary]],
+      },
+    ],
+  })
+}

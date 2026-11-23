@@ -2,7 +2,6 @@ import '@tensorflow/tfjs-backend-webgl'
 import * as tf from '@tensorflow/tfjs'
 import * as poseDetection from '@tensorflow-models/pose-detection'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import './ai-diagnostic.css'
 
 const VIDEO_CONSTRAINTS = {
   video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
@@ -269,7 +268,11 @@ export default function AITrackingDiagnostic({ onClose, onSnapshotSaved }) {
       setStatus('loading-model')
       await tf.setBackend('webgl')
       await tf.ready()
-      detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING, enableSmoothing: true })
+      detectorRef.current = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        modelUrl: '/models/movenet-lightning/model.json',
+        enableSmoothing: true,
+      })
       setStatus('tracking')
       animationRef.current = requestAnimationFrame(trackFrame)
     } catch (error) {
